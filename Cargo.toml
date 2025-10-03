@@ -1,0 +1,15 @@
+[package]
+name = "rio"
+version = "0.1.0"
+edition = "2024"
+authors = ["Huseen Munye"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/hmunye/rio"
+description = """
+Minimal asynchronous runtime for exploring `async` Rust.
+"""
+categories = ["asynchronous", "network-programming"]
+keywords = ["io", "async", "non-blocking", "futures"]
+
+[dependencies]
