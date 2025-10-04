@@ -29,9 +29,10 @@
 //! misbehaving task can potentially never yield, ensuring that no other task is
 //! able to make progress, and possibly resulting in a deadlock.
 //!
-//! Because the OS is not involved in this language-level multitasking, a
-//! `runtime` is required to ensure each task is scheduled and polled to
-//! completion.
+//! Because the OS is not involved in this cooperative multitasking, a `runtime`
+//! is required to ensure each task is scheduled and polled to completion.
 
 mod runtime;
 pub use runtime::Runtime;
+
+pub(crate) mod task;

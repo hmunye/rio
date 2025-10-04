@@ -1,10 +1,13 @@
+use std::cell::RefCell;
 use std::future::Future;
-use std::pin::Pin;
+use std::rc::Rc;
 use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use std::{ptr, thread};
 
+use crate::rt::task::Task;
+
 /// The `rio` runtime.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Runtime {}
 
 impl Runtime {
@@ -18,20 +21,26 @@ impl Runtime {
     ///
     /// This runs the given future on the current thread, blocking until it is
     /// complete, and yielding its resolved result.
-    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+    pub fn block_on<F: Future + 'static>(&self, future: F) -> F::Output {
         let waker = Runtime::noop_waker();
         let mut ctx = Context::from_waker(&waker);
 
-        let mut pinned = future;
+        let output = Rc::new(RefCell::new(None));
+        let out_clone = Rc::clone(&output);
+
+        let mut task = Task::new(async move {
+            // Ensure we can read out a possible output.
+            *out_clone.borrow_mut() = Some(future.await);
+        });
+
         loop {
-            // SAFETY: The pointee `pinned` is a stack variable that will not
-            // be deallocated until the function returns, which is when the
-            // `Future` resolves.
-            match unsafe { Pin::new_unchecked(&mut pinned) }.poll(&mut ctx) {
-                Poll::Ready(out) => return out,
+            match task.poll(&mut ctx) {
+                Poll::Ready(_) => break,
                 Poll::Pending => thread::yield_now(),
             }
         }
+
+        output.borrow_mut().take().unwrap()
     }
 
     #[inline]
