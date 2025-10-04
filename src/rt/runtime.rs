@@ -1,20 +1,24 @@
 use std::cell::RefCell;
 use std::future::Future;
 use std::rc::Rc;
-use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
-use std::{ptr, thread};
 
+use crate::rt::scheduler::Scheduler;
 use crate::rt::task::Task;
+use crate::rt::waker::TaskWaker;
 
 /// The `rio` runtime.
-#[derive(Debug, Default)]
-pub struct Runtime {}
+#[derive(Debug)]
+pub struct Runtime {
+    scheduler: Rc<Scheduler>,
+}
 
 impl Runtime {
     /// Creates a new `Runtime` instance.
     #[inline]
-    pub const fn new() -> Self {
-        Runtime {}
+    pub fn new() -> Self {
+        Runtime {
+            scheduler: Rc::new(Scheduler::new()),
+        }
     }
 
     /// Runs a future to completion, serving as the runtime’s entry point.
@@ -22,43 +26,27 @@ impl Runtime {
     /// This runs the given future on the current thread, blocking until it is
     /// complete, and yielding its resolved result.
     pub fn block_on<F: Future + 'static>(&self, future: F) -> F::Output {
-        let waker = Runtime::noop_waker();
-        let mut ctx = Context::from_waker(&waker);
-
         let output = Rc::new(RefCell::new(None));
         let out_clone = Rc::clone(&output);
 
-        let mut task = Task::new(async move {
-            // Ensure we can read out a possible output.
+        let task = Rc::new(RefCell::new(Task::new(async move {
+            // Ensure we can read out a possible output. `Task` requires a
+            // `Future<Output = ()>`.
             *out_clone.borrow_mut() = Some(future.await);
-        });
+        })));
 
-        loop {
-            match task.poll(&mut ctx) {
-                Poll::Ready(_) => break,
-                Poll::Pending => thread::yield_now(),
-            }
-        }
+        let waker = TaskWaker::new(&task, Rc::clone(&self.scheduler));
 
+        // Blocks until the provided task resolves.
+        self.scheduler.block_on(task, waker);
+
+        // Value stored in `output` will always be `Some(F::Output)`.
         output.borrow_mut().take().unwrap()
     }
+}
 
-    #[inline]
-    const fn noop_waker() -> Waker {
-        // SAFETY: Waker only consists of no-op function, making it trivially
-        // thread-safe. Data pointer is never accessed.
-        unsafe { Waker::from_raw(Runtime::noop_raw_waker()) }
-    }
-
-    #[inline]
-    const fn noop_raw_waker() -> RawWaker {
-        let vtable = &RawWakerVTable::new(
-            |_: *const ()| -> RawWaker { Runtime::noop_raw_waker() },
-            |_: *const ()| {},
-            |_: *const ()| {},
-            |_: *const ()| {},
-        );
-
-        RawWaker::new(ptr::null(), vtable)
+impl Default for Runtime {
+    fn default() -> Self {
+        Self::new()
     }
 }

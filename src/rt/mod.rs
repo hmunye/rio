@@ -35,4 +35,6 @@
 mod runtime;
 pub use runtime::Runtime;
 
+pub(crate) mod scheduler;
 pub(crate) mod task;
+pub(crate) mod waker;
