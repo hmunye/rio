@@ -30,7 +30,7 @@
 //! able to make progress, and possibly resulting in a deadlock.
 //!
 //! Because the OS is not involved in this cooperative multitasking, a `runtime`
-//! is required to ensure each task is scheduled and polled to completion.
+//! is required to ensure each task is scheduled and polled to make progress.
 
 mod runtime;
 pub use runtime::Runtime;
@@ -38,3 +38,33 @@ pub use runtime::Runtime;
 pub(crate) mod scheduler;
 pub(crate) mod task;
 pub(crate) mod waker;
+
+thread_local! {
+    /// Using thread-local storage (`TLS`) makes the implementation compatible
+    /// with potential multithreading and supporting nested runtimes.
+    ///
+    /// It also enables explicit scoping of the current runtime context.
+    pub(crate) static CURRENT_RUNTIME: std::cell::Cell<Option<*const Runtime>> = const {
+        std::cell::Cell::new(None)
+    };
+}
+
+/// Spawns a new asynchronous `Task` running in the background, enabling it to
+/// execute concurrently with other tasks.
+///
+/// Returning the output of the provided `Future` is currently not supported,
+/// so it will be polled solely for its side effects.
+pub fn spawn<F: std::future::Future<Output = ()> + 'static>(future: F) {
+    CURRENT_RUNTIME.with(|c| {
+        if let Some(rt_ptr) = c.get() {
+            // SAFETY: The thread-local holds a raw pointer to a `Runtime`. This
+            // pointer is only set via the entry point `Runtime::block_on`, and
+            // cleared when the associated `EnterGuard` is dropped. Spawning is
+            // only allowed within the context of a runtime.
+            let rt = unsafe { &*rt_ptr };
+            rt.spawn_inner(future);
+        } else {
+            panic!("`spawn` called outside of a rutime context");
+        }
+    })
+}

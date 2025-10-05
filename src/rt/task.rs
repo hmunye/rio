@@ -1,25 +1,31 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll};
 
+thread_local! {
+    // Ensures each `Task` can be assigned a unique ID.
+    static NEXT_ID: Cell<u64> = const { Cell::new(0) };
+}
+
 /// Handle to a `Task`, using `Rc` and `RefCell` for shared ownership and
 /// interior mutability in single-threaded contexts.
 pub(crate) type TaskHandle = Rc<RefCell<Task>>;
 
 /// Uniquely identifier for a single `Task`.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct Id(u64);
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct TaskId(u64);
 
-impl Id {
+impl TaskId {
     #[inline]
-    const fn new() -> Self {
-        // Ensures each `Task` can be assigned a unique ID.
-        static NEXT_ID: u64 = 0;
-
-        Id(NEXT_ID + 1)
+    fn new() -> Self {
+        TaskId(NEXT_ID.with(|c| {
+            let id = c.get();
+            c.set(id + 1);
+            id
+        }))
     }
 }
 
@@ -30,10 +36,12 @@ impl Id {
 /// [runtime]: crate::rt
 pub(crate) struct Task {
     /// Unique identifier for a task.
-    #[allow(dead_code)]
-    pub(crate) id: Id,
+    pub(crate) id: TaskId,
     /// Pinned, heap-allocated, type-erased future.
     future: Pin<Box<dyn Future<Output = ()>>>,
+    /// Indicates whether the task has already been scheduled for polling. This
+    /// avoids re-queuing already scheduled tasks.
+    pub(crate) scheduled: Cell<bool>,
 }
 
 impl Task {
@@ -41,8 +49,9 @@ impl Task {
     #[inline]
     pub(crate) fn new<F: Future<Output = ()> + 'static>(future: F) -> Self {
         Task {
-            id: Id::new(),
+            id: TaskId::new(),
             future: Box::pin(future),
+            scheduled: Cell::new(false),
         }
     }
 

@@ -9,3 +9,4 @@
 #![deny(unused_must_use)]
 
 pub mod rt;
+pub use rt::spawn;

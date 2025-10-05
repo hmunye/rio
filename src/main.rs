@@ -1,7 +1,20 @@
 fn main() {
     let rt = rio::rt::Runtime::new();
 
-    let res = rt.block_on(async { 1 + 2 });
+    rt.block_on(async {
+        println!("blocking on main task");
+        let res = 1 + 2;
 
-    println!("result: {res}");
+        rio::spawn(async move {
+            println!("printing result in spawned task 1: {res}");
+        });
+
+        rio::spawn(async move {
+            println!("printing result in spawned task 2: {res}");
+        });
+
+        rio::spawn(async move {
+            println!("printing result in spawned task 3: {res}");
+        });
+    })
 }
