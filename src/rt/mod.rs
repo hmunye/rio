@@ -55,13 +55,13 @@ thread_local! {
 /// Returning the output of the provided `Future` is currently not supported,
 /// so it will be polled solely for its side effects.
 pub fn spawn<F: std::future::Future<Output = ()> + 'static>(future: F) {
-    CURRENT_RUNTIME.with(|c| {
-        if let Some(rt_ptr) = c.get() {
+    CURRENT_RUNTIME.with(|rt| {
+        if let Some(ptr) = rt.get() {
             // SAFETY: The thread-local holds a raw pointer to a `Runtime`. This
             // pointer is only set via the entry point `Runtime::block_on`, and
             // cleared when the associated `EnterGuard` is dropped. Spawning is
-            // only allowed within the context of a runtime.
-            let rt = unsafe { &*rt_ptr };
+            // only possible within the context of a runtime.
+            let rt = unsafe { &*ptr };
             rt.spawn_inner(future);
         } else {
             panic!("`spawn` called outside of a rutime context");

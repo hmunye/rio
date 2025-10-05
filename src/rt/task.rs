@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::task::{Context, Poll};
 
 thread_local! {
-    // Ensures each `Task` can be assigned a unique ID.
+    /// Guarantees that each `Task` is assigned a unique ID.
     static NEXT_ID: Cell<u64> = const { Cell::new(0) };
 }
 
@@ -15,7 +15,7 @@ thread_local! {
 pub(crate) type TaskHandle = Rc<RefCell<Task>>;
 
 /// Uniquely identifier for a single `Task`.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct TaskId(u64);
 
 impl TaskId {

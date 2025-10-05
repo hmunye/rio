@@ -13,7 +13,7 @@ pub struct Runtime {
     /// The executor responsible for scheduling and polling tasks. Wrapped in an
     /// `Rc` to allow cloning for each `TaskWaker`, enabling them to reschedule
     /// their associated `Task`.
-    scheduler: Rc<Scheduler>,
+    pub(crate) scheduler: Rc<Scheduler>,
 }
 
 /// Guard used to set the thread-local `Runtime` context during initialization.
