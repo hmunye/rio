@@ -14,6 +14,12 @@ cargo add --git https://github.com/hmunye/rio.git
 
 Examples using this crate could be found [here](https://github.com/hmunye/rio/tree/main/examples).
 
+## Limitations
+
+This crate is Linux-only due to dependencies on:
+
+- *`epoll(7)`* for efficient single-threaded, non-blocking I/O
+
 ## License
 
 This project is licensed under the [MIT License].

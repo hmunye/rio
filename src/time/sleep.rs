@@ -62,7 +62,7 @@ impl Future for Sleep {
                     // `EnterGuard` is dropped. Polling a `Sleep` is only
                     // possible within the context of a runtime.
                     let rt = unsafe { &*ptr };
-                    rt.scheduler.add_timer(self.wake_at);
+                    rt.scheduler.register_timer(self.wake_at);
                 } else {
                     panic!("`sleep/sleep_until` called outside of a rutime context");
                 }

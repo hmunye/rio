@@ -1,10 +1,11 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
+use std::os::unix::io::RawFd;
 use std::task::Context;
 use std::time::Instant;
 
-use crate::rt::task::{TaskHandle, TaskId};
-use crate::rt::waker::TaskWaker;
+use crate::rt::io::Driver;
+use crate::rt::task::{TaskHandle, TaskId, TaskWaker};
 use crate::util::MinHeap;
 
 thread_local! {
@@ -37,6 +38,9 @@ pub(crate) struct Scheduler {
     /// scheduled wake-up time. Lexicographical ordering is used, meaning
     /// `wake_at` times are compared first.
     timers: RefCell<MinHeap<(Instant, TaskId)>>,
+    /// Handles the registering and waiting on I/O events, waking tasks when
+    /// file descriptors become ready.
+    driver: RefCell<Driver>,
 }
 
 impl Scheduler {
@@ -45,9 +49,10 @@ impl Scheduler {
     pub(crate) fn new() -> Self {
         Scheduler {
             tasks: Default::default(),
-            ready: RefCell::new(Default::default()),
+            ready: Default::default(),
             pending: Default::default(),
             timers: Default::default(),
+            driver: RefCell::new(Driver::new()),
         }
     }
 
@@ -56,38 +61,70 @@ impl Scheduler {
     pub(crate) fn block_on_task(&self, task: TaskHandle, waker: TaskWaker) {
         let id = task.borrow().id;
 
-        self.schedule(id);
+        self.schedule_task(id);
         self.tasks.borrow_mut().insert(id, (task, waker));
 
-        // Spin for now until there are no more tasks (pending or active).
-        while !self.tasks.borrow().is_empty() || !self.pending.borrow().is_empty() {
+        while !self.is_idle() {
+            // Use the closest expiring timer as the `timeout` for the driver.
+            //
+            // `-1` indicates the I/O driver should just block.
+            let timeout = self
+                .timers
+                .borrow()
+                .peek()
+                .and_then(|(timer, _)| timer.checked_duration_since(Instant::now()))
+                .map(|duration| duration.as_millis() as i32)
+                .unwrap_or(-1);
+
+            self.driver
+                .borrow_mut()
+                .poll(timeout, |id| self.schedule_task(id));
+
             self.tick();
         }
     }
 
     /// Schedules the given `TaskHandle` and associated `TaskWaker`, executing
     /// it concurrently with other tasks.
+    #[inline]
     pub(crate) fn spawn_task(&self, task: TaskHandle, waker: TaskWaker) {
         self.pending.borrow_mut().push((task, waker));
     }
 
-    /// Adds a timer to the scheduler, associating it with the currently active
-    /// `Task`.
-    pub(crate) fn add_timer(&self, duration: Instant) {
+    /// Registers a timer with the scheduler, associating it with the currently
+    /// polled `Task`.
+    pub(crate) fn register_timer(&self, duration: Instant) {
         let task_id = CURRENT_TASK.with(|c| c.get());
         self.timers.borrow_mut().push((duration, task_id));
     }
 
+    /// Registers the given file descriptor with the I/O driver, associating it
+    /// with the currently polled `Task`.
+    #[allow(dead_code)]
+    pub(crate) fn register_fd(&self, fd: RawFd, events: u32) {
+        let task_id = CURRENT_TASK.with(|c| c.get());
+        self.driver.borrow_mut().register(fd, events, task_id)
+    }
+
     /// Marks the `Task` associated with the provided ID as ready to be polled.
     #[inline]
-    pub(crate) fn schedule(&self, id: TaskId) {
+    pub(crate) fn schedule_task(&self, id: TaskId) {
         self.ready.borrow_mut().push_back(id);
+    }
+
+    /// Returns `true` if the runtime has no remaining tasks to execute, meaning
+    /// no currently active tasks and no spawned tasks waiting to be scheduled.
+    ///
+    /// Used by `block_on_task` to decide when the runtime can exit cleanly.
+    fn is_idle(&self) -> bool {
+        self.tasks.borrow().is_empty() && self.pending.borrow().is_empty()
     }
 
     /// Polls all currently ready tasks on the `ready` queue, handling any
     /// pending spawned tasks as well.
     fn tick(&self) {
         self.process_pending();
+
         self.process_timers();
 
         while let Some(id) = self.ready.borrow_mut().pop_front() {
@@ -100,7 +137,10 @@ impl Scheduler {
             // Mark as not currently scheduled.
             task.borrow().scheduled.set(false);
 
-            // Set the thread-local task ID to the current task's ID.
+            // Set the thread-local task ID to the current task's ID. This
+            // establishes implicit context for all descendant futures, allowing
+            // them to interact with the scheduler (e.g., for waking) without
+            // needing to know or pass the task's identity directly.
             CURRENT_TASK.with(|c| c.set(task.borrow().id));
 
             let mut ctx = Context::from_waker(&waker);
@@ -109,9 +149,7 @@ impl Scheduler {
                 task_ref.poll(&mut ctx)
             };
 
-            // Reset the current task ID after polling, ensuring that
-            // `CURRENT_TASK` reflects either the root task or the most recently
-            // polled task.
+            // Reset the current task ID after polling.
             CURRENT_TASK.with(|c| c.set(TaskId::default()));
 
             if poll.is_pending() {
@@ -130,7 +168,7 @@ impl Scheduler {
 
         for (task, waker) in pending.drain(..) {
             let id = task.borrow().id;
-            self.schedule(id);
+            self.schedule_task(id);
             self.tasks.borrow_mut().insert(id, (task, waker));
         }
     }
@@ -149,7 +187,7 @@ impl Scheduler {
             };
 
             if wake_at <= time_now {
-                self.schedule(id);
+                self.schedule_task(id);
             } else {
                 self.timers.borrow_mut().push((wake_at, id));
                 // Since the earliest timeout in the heap hasn't expired, all

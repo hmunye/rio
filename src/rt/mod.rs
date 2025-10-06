@@ -35,9 +35,9 @@
 mod runtime;
 pub use runtime::Runtime;
 
+pub(crate) mod io;
 pub(crate) mod scheduler;
 pub(crate) mod task;
-pub(crate) mod waker;
 
 thread_local! {
     /// Using thread-local storage (`TLS`) makes the implementation compatible

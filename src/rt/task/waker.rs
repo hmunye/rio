@@ -98,7 +98,7 @@ unsafe fn wake(ptr: *const ()) {
     // Schedule the underlying task for polling
     if !data.task.borrow().scheduled.get() {
         let id = data.task.borrow().id;
-        data.scheduler.schedule(id);
+        data.scheduler.schedule_task(id);
 
         // Mark task as scheduled.
         data.task.borrow().scheduled.set(true)
@@ -116,7 +116,7 @@ unsafe fn wake_by_ref(ptr: *const ()) {
     // Schedule the underlying task for polling
     if !data.task.borrow().scheduled.get() {
         let id = data.task.borrow().id;
-        data.scheduler.schedule(id);
+        data.scheduler.schedule_task(id);
 
         // Mark task as scheduled.
         data.task.borrow().scheduled.set(true)

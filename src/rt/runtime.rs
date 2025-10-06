@@ -4,8 +4,7 @@ use std::rc::Rc;
 
 use crate::rt::CURRENT_RUNTIME;
 use crate::rt::scheduler::Scheduler;
-use crate::rt::task::Task;
-use crate::rt::waker::TaskWaker;
+use crate::rt::task::{Task, TaskWaker};
 
 /// The `rio` runtime.
 #[derive(Debug, Clone)]
@@ -76,11 +75,5 @@ impl Runtime {
         let waker = TaskWaker::new(Rc::clone(&task), Rc::clone(&self.scheduler));
 
         self.scheduler.spawn_task(task, waker);
-    }
-}
-
-impl Default for Runtime {
-    fn default() -> Self {
-        Self::new()
     }
 }

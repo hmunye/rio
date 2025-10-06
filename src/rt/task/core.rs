@@ -16,7 +16,7 @@ pub(crate) type TaskHandle = Rc<RefCell<Task>>;
 
 /// Uniquely identifier for a single `Task`.
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct TaskId(u64);
+pub(crate) struct TaskId(pub(crate) u64);
 
 impl TaskId {
     #[inline]
@@ -26,6 +26,12 @@ impl TaskId {
             c.set(id + 1);
             id
         }))
+    }
+}
+
+impl From<u64> for TaskId {
+    fn from(value: u64) -> Self {
+        TaskId(value)
     }
 }
 
