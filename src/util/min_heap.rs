@@ -14,11 +14,10 @@
 /// [peek]: MinHeap::peek
 #[derive(Debug)]
 pub(crate) struct MinHeap<T> {
-    /// Internal buffer is `Vec` for cache locality and fast index-based access.
+    /// Internal buffer used for cache locality and fast index-based access.
     buf: Vec<T>,
 }
 
-#[allow(dead_code)]
 pub(crate) struct IntoIterSorted<T> {
     inner: MinHeap<T>,
 }
@@ -37,38 +36,41 @@ impl<T: Ord> Iterator for IntoIterSorted<T> {
 
 /// Encodes the position of the item to sift from and the direction of sifting.
 /// The upper 63 bits store the position, and the lowest bit indicates the
-/// direction: `1` for upward (sift-up) and `0` for downward (sift-down).
+/// direction: _1_ for upward (sift-up) and _0_ for downward (sift-down).
 #[repr(transparent)]
 struct SiftInfo(u64);
 
 impl SiftInfo {
+    #[inline]
     fn new(pos: usize, should_sift_up: bool) -> Self {
-        // `usize` is platform-dependent (`u32` or `u64`), but converting to
-        // `u64` ensures consistent bit-packing across architectures. We store
-        // the sift direction in the most significant bit (MSB), which won't
-        // interfere with valid position values, since Rust collections are
-        // limited to `isize::MAX`, which fits within the lower 63 bits of a
-        // `u64`.
+        // `usize` is platform-dependent (32-bit or 64-bit), so converting to
+        // `u64` ensures consistency. The sift direction is stored in the most
+        // significant bit (MSB), which won't interfere with valid position
+        // values, since Rust collections limits allocations to [`isize::MAX`],
+        // which fits within the lower 63 bits of a `u64`.
         let packed = (pos as u64) | ((should_sift_up as u64) << 63);
 
         SiftInfo(packed)
     }
 
+    #[inline]
     fn pos(&self) -> usize {
         (self.0 & !(1 << 63)) as usize
     }
 
+    #[inline]
     fn should_sift_up(&self) -> bool {
         ((self.0 >> 63) & 0x1) != 0
     }
 
-    #[allow(dead_code)]
+    #[inline]
+    #[allow(unused)]
     fn should_sift_down(&self) -> bool {
         ((self.0 >> 63) & 0x1) == 0
     }
 }
 
-/// Guard used to `heapify` the binary heap automatically on `Drop`.
+/// Guard used to `heapify` the binary heap automatically on [`Drop`].
 ///
 /// https://doc.rust-lang.org/src/alloc/collections/binary_heap/mod.rs.html#484
 struct HeapifyGuard<'a, T: Ord> {
@@ -83,28 +85,24 @@ impl<T: Ord> Drop for HeapifyGuard<'_, T> {
         if self.sift_info.should_sift_up() {
             debug_assert!(
                 pos < self.heap.len(),
-                "invalid `pos` provided when sifting up: {}",
+                "invalid position provided when sifting up: {}",
                 pos
             );
 
-            // SAFETY: `pos` is < heap.len(), making the range valid.
-            //
-            // `sift_up` in range `0..=pos`.
+            // SAFETY: `pos` is < heap.len(), making the range `0..=pos` valid.
             unsafe {
                 self.heap.sift_up(0, pos);
             }
         } else {
             debug_assert!(
                 pos <= self.heap.len(),
-                "invalid `pos` provided when sifting up: {}",
+                "invalid position provided when sifting down: {}",
                 pos
             );
 
-            // SAFETY: `pos` is <= heap.len(), making the range valid.
-            //
-            // `sift_down` in range `0..pos`.
+            // SAFETY: `pos` is <= heap.len(), making the range `0..pos` valid.
             unsafe {
-                self.heap.sift_down(pos, 0);
+                self.heap.sift_down(0, pos);
             }
         }
     }
@@ -123,7 +121,7 @@ impl<T: Ord> MinHeap<T> {
     /// reallocating. This method is allowed to allocate for more elements than
     /// `capacity`. If `capacity` is zero, the binary heap will not allocate.
     #[inline]
-    #[allow(dead_code)]
+    #[allow(unused)]
     pub(crate) fn with_capacity(capacity: usize) -> Self {
         MinHeap {
             buf: Vec::with_capacity(capacity),
@@ -133,7 +131,7 @@ impl<T: Ord> MinHeap<T> {
     /// Pushes an item onto the binary heap.
     pub(crate) fn push(&mut self, item: T) {
         let guard = HeapifyGuard {
-            // The item to `sift_up` will be at this position.
+            // The item to sift up will be at this position.
             sift_info: SiftInfo::new(self.len(), true),
             heap: self,
         };
@@ -145,30 +143,30 @@ impl<T: Ord> MinHeap<T> {
         // `HeapifyGuard` rebuilds the heap on drop...
     }
 
-    /// Removes the smallest item from the binary heap and returns it, or `None`
-    /// if it is empty.
+    /// Removes the smallest item from the binary heap and returns it, or
+    /// [`None`] if it is empty.
     pub(crate) fn pop(&mut self) -> Option<T> {
         if self.is_empty() {
             None
         } else {
             let guard = HeapifyGuard {
-                // The item to `sift_down` was at this position.
+                // The item to sift down was at this position.
                 sift_info: SiftInfo::new(self.len() - 1, false),
                 heap: self,
             };
 
             // Removes the smallest element, replacing it with the last element
-            // of the heap. Ensures the operation is *O*(1), instead of
-            // `remove(0)` which shifts all elements after to the left (*O*(n)).
+            // of the heap. Ensures *O*(1) time, instead of `remove(0)` which
+            // is *O*(n) time.
             Some(guard.heap.buf.swap_remove(0))
 
             // `HeapifyGuard` rebuilds the heap on drop...
         }
     }
 
-    /// Returns a reference to the smallest item in the binary heap, or `None`
+    /// Returns a reference to the smallest item in the binary heap, or [`None`]
     /// if it is empty.
-    #[allow(dead_code)]
+    #[inline]
     pub(crate) fn peek(&self) -> Option<&T> {
         self.buf.first()
     }
@@ -182,7 +180,7 @@ impl<T: Ord> MinHeap<T> {
     /// Returns the number of elements the binary heap can hold without
     /// reallocating.
     #[inline]
-    #[allow(dead_code)]
+    #[allow(unused)]
     pub(crate) const fn capacity(&self) -> usize {
         self.buf.capacity()
     }
@@ -193,22 +191,19 @@ impl<T: Ord> MinHeap<T> {
         self.buf.is_empty()
     }
 
-    /// Returns an iterator which retrieves elements in heap order.
+    /// Returns an iterator which retrieves elements in min-heap order.
     ///
-    /// This method consumes the original heap.
-    #[inline]
-    #[allow(dead_code)]
+    /// This method consumes the original binary heap.
+    #[allow(unused)]
     pub(crate) const fn into_iter_sorted(self) -> IntoIterSorted<T> {
         IntoIterSorted { inner: self }
     }
 
     /// Restores the min-heap invariant by fixing any violations caused after
-    /// an insertion.
+    /// an insertion, returning the new position of the item.
     ///
     /// `start` specifies the upper bound (inclusive) for where the sifting
     /// should stop. `pos` is the index of the item that is being moved up.
-    ///
-    /// Returns the new position of the item.
     ///
     /// # Safety
     ///
@@ -217,8 +212,6 @@ impl<T: Ord> MinHeap<T> {
     unsafe fn sift_up(&mut self, start: usize, mut pos: usize) -> usize {
         // For an element at index `i`:
         //
-        // - Left child: 2i + 1
-        // - Right child: 2i + 2
         // - Parent: (i - 1) / 2
         while pos > start {
             let parent = (pos - 1) / 2;
@@ -227,7 +220,7 @@ impl<T: Ord> MinHeap<T> {
                 break;
             }
 
-            // Bubble the item upward, swapping it with its parent.
+            // Sift the item upward, swapping it with its parent.
             self.buf.swap(pos, parent);
 
             pos = parent;
@@ -237,29 +230,25 @@ impl<T: Ord> MinHeap<T> {
     }
 
     /// Restores the min-heap invariant by fixing any violations caused after
-    /// a removal.
+    /// a removal, returning the new position of the item.
     ///
-    /// `end` specifies the upper bound (exclusive) for where the sifting
-    /// should stop. `pos` is the index of the item that is being moved down.
-    ///
-    /// Returns the new position of the item.
+    /// `pos` is the index of the item that is being moved down. `end` specifies
+    /// the upper bound (exclusive) for where the sifting should stop.     
     ///
     /// # Safety
     ///
     /// The range `pos..end` must lie entirely within the bounds of the heap.
     /// This function may panic due to out-of-bounds access otherwise.
-    unsafe fn sift_down(&mut self, end: usize, mut pos: usize) -> usize {
+    unsafe fn sift_down(&mut self, mut pos: usize, end: usize) -> usize {
         // For an element at index `i`:
         //
         // - Left child: 2i + 1
         // - Right child: 2i + 2
-        // - Parent: (i - 1) / 2
         loop {
             let left = 2 * pos + 1;
             let right = 2 * pos + 2;
 
-            // Comparison starts with the left child. Once the left child index
-            // exceeds or equals `end`, we stop comparisons.
+            // Comparison starts with the left child.
             if left >= end {
                 break;
             }
@@ -270,9 +259,9 @@ impl<T: Ord> MinHeap<T> {
                 min = left;
             }
 
-            // Check if the right child exists before comparing. The `&&` is
-            // short-circuiting, so the second condition won't run if `right` is
-            // out of bounds.
+            // Check if the right child exists before comparing. `&&` is
+            // short-circuiting, so the second condition won't run if `right`
+            // is out of bounds.
             if right < end && self.buf[min] >= self.buf[right] {
                 min = right;
             }
@@ -282,7 +271,7 @@ impl<T: Ord> MinHeap<T> {
                 self.buf.swap(min, pos);
                 pos = min;
             } else {
-                // Can no longer sift down the item.
+                // Can no longer sift down.
                 break;
             }
         }
@@ -292,8 +281,6 @@ impl<T: Ord> MinHeap<T> {
 }
 
 impl<T: Ord> Default for MinHeap<T> {
-    /// Creates an empty `MinHeap`.
-    #[inline]
     fn default() -> Self {
         MinHeap::new()
     }
@@ -309,6 +296,7 @@ mod tests {
         assert!(heap.peek().is_none());
         assert!(heap.pop().is_none());
         assert_eq!(heap.len(), 0);
+        assert_eq!(heap.capacity(), 0);
         assert!(heap.is_empty());
     }
 

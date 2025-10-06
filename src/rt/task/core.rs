@@ -10,12 +10,12 @@ thread_local! {
     static NEXT_ID: Cell<u64> = const { Cell::new(0) };
 }
 
-/// Handle to a `Task`, using `Rc` and `RefCell` for shared ownership and
-/// interior mutability in single-threaded contexts.
+/// Shared handle to a [`Task`] for single-threaded contexts.
 pub(crate) type TaskHandle = Rc<RefCell<Task>>;
 
-/// Uniquely identifier for a single `Task`.
+/// Unique identifier for a [`Task`].
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
 pub(crate) struct TaskId(pub(crate) u64);
 
 impl TaskId {
@@ -35,15 +35,15 @@ impl From<u64> for TaskId {
     }
 }
 
-/// Lightweight, non-blocking units of execution, similar to OS threads, but
-/// rather than being managed by the OS scheduler, they are managed by the
+/// Lightweight, non-blocking unit of execution, similar to an OS thread, but
+/// rather than being managed by the OS scheduler, it is managed by the
 /// [runtime].
 ///
 /// [runtime]: crate::rt
 pub(crate) struct Task {
-    /// Unique identifier for a task.
+    /// Used to uniquely identify a task.
     pub(crate) id: TaskId,
-    /// Pinned, heap-allocated, type-erased future.
+    /// Pinned, heap-allocated, type-erased [`Future`].
     future: Pin<Box<dyn Future<Output = ()>>>,
     /// Indicates whether the task has already been scheduled for polling. This
     /// avoids re-queuing already scheduled tasks.
@@ -61,7 +61,7 @@ impl Task {
         }
     }
 
-    /// Polls the inner future, returning a `Poll<()>`.
+    /// Polls the inner future, returning the [`Poll`] result.
     #[inline]
     pub(crate) fn poll(&mut self, ctx: &mut Context<'_>) -> Poll<()> {
         self.future.as_mut().poll(ctx)
@@ -70,6 +70,9 @@ impl Task {
 
 impl fmt::Debug for Task {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Task").finish()
+        f.debug_struct("Task")
+            .field("id", &self.id)
+            .field("scheduled", &self.scheduled)
+            .finish()
     }
 }

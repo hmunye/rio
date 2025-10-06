@@ -1,9 +1,9 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::task::Waker;
 use std::{io, ptr};
 
 use crate::rt::io::errno;
-use crate::rt::task::TaskId;
 
 /// I/O driver backed by `epoll(7)`.
 ///
@@ -11,10 +11,12 @@ use crate::rt::task::TaskId;
 /// file descriptors become ready.
 #[derive(Debug)]
 pub(crate) struct Driver {
+    /// File descriptor of the `epoll(7)` instance.
     epoll_fd: RawFd,
     /// Stores events for ready file descriptors.
     events: [libc::epoll_event; Self::EPOLL_MAX_EVENTS as usize],
-    registered_fds: HashSet<RawFd>,
+    /// Associates file descriptors with their corresponding [`Waker`].
+    registered_fds: HashMap<RawFd, Waker>,
 }
 
 impl Driver {
@@ -23,10 +25,9 @@ impl Driver {
 
     /// Creates a new `Reactor` instance.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// Returns an error if the `epoll(7)` instance could not be created.
-    #[inline]
+    /// This function panics if the `epoll(7)` instance could not be created.
     pub(crate) fn new() -> Self {
         Driver {
             epoll_fd: Self::init_epoll_fd(),
@@ -41,12 +42,13 @@ impl Driver {
     ///
     /// `timeout` specifies the maximum duration (in milliseconds) to block. A
     /// timeout of `-1` will cause the function to block indefinitely, while a
-    /// timeout of `0` will not wait on any file descriptors to be ready.
+    /// timeout of `0` will not wait on any file descriptors to be ready before
+    /// returning.
     ///
     /// # Panics
     ///
     /// This function panics if it fails to wait on file descriptor readiness.
-    pub(crate) fn poll<F: Fn(TaskId)>(&mut self, timeout: i32, on_ready: F) {
+    pub(crate) fn poll(&mut self, timeout: i32) {
         if self.registered_fds.is_empty() {
             return;
         }
@@ -66,25 +68,28 @@ impl Driver {
             }
 
             for event in self.events.iter().take(rdfs as usize) {
-                on_ready(event.u64.into());
+                let fd = event.u64 as i32;
+
+                if let Some(waker) = self.registered_fds.remove(&fd) {
+                    waker.wake();
+                }
             }
         }
     }
 
     /// Add an entry to the interest list of the `epoll(7)` file descriptor.
-    /// Each event is associated to a given `TaskId`.
+    /// Each event is associated to a given [`Waker`].
     ///
-    /// `events` is a bit mask of event types (epoll_ctl(2)).
+    /// `events` is a bit mask of event types (`epoll_ctl(2)`).
     ///
     /// # Panics
     ///
     /// This function panics if the entry could not be added to the interest
     /// list.
-    #[allow(dead_code)]
-    pub(crate) fn register(&mut self, fd: RawFd, events: u32, task_id: TaskId) {
+    pub(crate) fn register(&mut self, fd: RawFd, events: u32, waker: Waker) {
         let mut ev = libc::epoll_event {
             events,
-            u64: task_id.0,
+            u64: fd as u64,
         };
 
         if unsafe { libc::epoll_ctl(self.epoll_fd, libc::EPOLL_CTL_ADD, fd, &raw mut ev) } == -1 {
@@ -97,17 +102,16 @@ impl Driver {
             panic!("{}", errno!("failed to add to epoll interest list"));
         }
 
-        self.registered_fds.insert(fd);
+        self.registered_fds.insert(fd, waker);
     }
 
-    /// Remove (deregister) the target file descriptor from the `epoll(7)`
+    /// Remove (unregister) the target file descriptor from the `epoll(7)`
     /// interest list.
     ///
     /// # Panics
     ///
-    /// This function panics if the file descriptor could not be removed.
-    #[allow(dead_code)]
-    pub(crate) fn deregister(&mut self, fd: RawFd) {
+    /// This function panics if the file descriptor could not be unregistered.
+    pub(crate) fn unregister(&mut self, fd: RawFd) {
         if unsafe { libc::epoll_ctl(self.epoll_fd, libc::EPOLL_CTL_DEL, fd, ptr::null_mut()) } == -1
         {
             // The supplied file descriptor is not registered with this `epoll`
@@ -119,14 +123,10 @@ impl Driver {
             panic!("{}", errno!("failed to remove from epoll interest list"));
         }
 
-        if self.registered_fds.remove(&fd) {
-            unsafe {
-                libc::close(fd);
-            }
-        }
+        self.registered_fds.remove(&fd);
     }
 
-    /// Creates a non-blocking `epoll_fd`.
+    /// Creates a non-blocking `epoll(7)` instance.
     ///
     /// # Panics
     ///
@@ -144,16 +144,6 @@ impl Driver {
             }
 
             epoll_fd.as_raw_fd()
-        }
-    }
-}
-
-impl Drop for Driver {
-    fn drop(&mut self) {
-        for fd in self.registered_fds.iter() {
-            unsafe {
-                libc::close(*fd);
-            }
         }
     }
 }

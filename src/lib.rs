@@ -14,6 +14,8 @@ compile_error!("This crate is only compatible with Linux systems that support ep
 pub mod rt;
 pub use rt::spawn;
 
+pub mod io;
+pub mod net;
 pub mod time;
 
 pub(crate) mod util;

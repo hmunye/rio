@@ -33,38 +33,12 @@
 //! is required to ensure each task is scheduled and polled to make progress.
 
 mod runtime;
+mod spawn;
+
 pub use runtime::Runtime;
+pub use spawn::spawn;
 
 pub(crate) mod io;
 pub(crate) mod scheduler;
 pub(crate) mod task;
-
-thread_local! {
-    /// Using thread-local storage (`TLS`) makes the implementation compatible
-    /// with potential multithreading and supporting nested runtimes.
-    ///
-    /// It also enables explicit scoping of the current runtime context.
-    pub(crate) static CURRENT_RUNTIME: std::cell::Cell<Option<*const Runtime>> = const {
-        std::cell::Cell::new(None)
-    };
-}
-
-/// Spawns a new asynchronous `Task` running in the background, enabling it to
-/// execute concurrently with other tasks.
-///
-/// Returning the output of the provided `Future` is currently not supported,
-/// so it will be polled solely for its side effects.
-pub fn spawn<F: std::future::Future<Output = ()> + 'static>(future: F) {
-    CURRENT_RUNTIME.with(|rt| {
-        if let Some(ptr) = rt.get() {
-            // SAFETY: The thread-local holds a raw pointer to a `Runtime`. This
-            // pointer is only set via the entry point `Runtime::block_on`, and
-            // cleared when the associated `EnterGuard` is dropped. Spawning is
-            // only possible within the context of a runtime.
-            let rt = unsafe { &*ptr };
-            rt.spawn_inner(future);
-        } else {
-            panic!("`spawn` called outside of a rutime context");
-        }
-    })
-}
+pub(crate) mod timer;

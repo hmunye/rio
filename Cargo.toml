@@ -12,9 +12,5 @@ Minimal asynchronous runtime for exploring `async` Rust.
 categories = ["asynchronous", "network-programming"]
 keywords = ["io", "async", "non-blocking", "futures"]
 
-[profile.dev]
-opt-level = 0
-debug = true
-
 [dependencies]
 libc = "0.2.176"

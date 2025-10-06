@@ -1,4 +1,4 @@
-//! Utilities, including data structures and types.
+//! Utility data structures and types.
 
 mod min_heap;
 pub(crate) use min_heap::MinHeap;

@@ -1,19 +1,18 @@
 use std::marker::PhantomData;
+use std::mem;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::task::{RawWaker, RawWakerVTable, Waker};
-use std::{mem, ptr};
 
 use crate::rt::scheduler::Scheduler;
 use crate::rt::task::TaskHandle;
 
-/// Wrapper around `Waker` that enforces `!Send` and `!Sync`.
+/// Wrapper around [`Waker`] that enforces `!Send` and `!Sync`.
 #[derive(Debug)]
 pub(crate) struct TaskWaker {
     waker: Waker,
     /// `Waker` is `Send` and `Sync` by default. This marker ensures that
-    /// `TaskWaker` is `!Send` and `!Sync`, restricting it to single-threaded
-    /// contexts.
+    /// `TaskWaker` is `!Send` and `!Sync`, restricting to single-threaded.
     _marker: PhantomData<Rc<()>>,
 }
 
@@ -24,45 +23,25 @@ struct WakerData {
 }
 
 impl TaskWaker {
-    /// Creates a new `TaskWaker` provided a shared `TaskHandle` and
-    /// reference-counted `Scheduler`.
+    /// Creates a new `TaskWaker` using the provided [`TaskHandle`] and
+    /// [`Scheduler`].
     pub(crate) fn new(task: TaskHandle, scheduler: Rc<Scheduler>) -> Self {
         let waker_data = Rc::new(WakerData { task, scheduler });
 
         TaskWaker {
-            // SAFETY: This is used in a single-threaded context. The vtable
-            // functions are only ever called with a valid pointer to the
-            // associated underlying `Task`.
+            // SAFETY: `TaskWaker` wrapper guarantees it is only usable in a
+            // single-threaded context. The vtable functions are only ever
+            // called with a valid pointer to the associated underlying `Task`.
             waker: unsafe { Waker::from_raw(Self::raw_waker(waker_data)) },
             _marker: PhantomData,
         }
     }
 
     fn raw_waker(data: Rc<WakerData>) -> RawWaker {
-        // Does not decrement the reference-count of `data`.
+        // Does not decrement the reference-count of `WakerData`.
         let ptr = Rc::into_raw(data) as *const ();
+
         RawWaker::new(ptr, &WAKER_VTABLE)
-    }
-
-    #[inline]
-    #[allow(dead_code)]
-    const fn noop_waker() -> Waker {
-        // SAFETY: `Waker` only consists of no-op function, making it trivially
-        // thread-safe. The data pointer is never meant to be accessed.
-        unsafe { Waker::from_raw(TaskWaker::noop_raw_waker()) }
-    }
-
-    #[inline]
-    #[allow(dead_code)]
-    const fn noop_raw_waker() -> RawWaker {
-        let vtable = &RawWakerVTable::new(
-            |_: *const ()| -> RawWaker { TaskWaker::noop_raw_waker() },
-            |_: *const ()| {},
-            |_: *const ()| {},
-            |_: *const ()| {},
-        );
-
-        RawWaker::new(ptr::null(), vtable)
     }
 }
 
@@ -79,7 +58,7 @@ const WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_re
 /// Returns a `RawWaker`, incrementing the reference-count of the underlying
 /// `Rc<WakerData>`.
 unsafe fn clone(ptr: *const ()) -> RawWaker {
-    // SAFETY: Raw pointer was initially created from a `Rc<WakerData>`.
+    // SAFETY: Raw pointer was initially created from a valid `Rc<WakerData>`.
     let data: Rc<WakerData> = unsafe { Rc::from_raw(ptr as *const WakerData) };
     let cloned = Rc::clone(&data);
 
@@ -90,9 +69,9 @@ unsafe fn clone(ptr: *const ()) -> RawWaker {
     TaskWaker::raw_waker(cloned)
 }
 
-/// Wakes the underlying `Task`, consuming the corresponding `Rc<WakerData>`.
+/// Wakes the underlying `Task`, consuming the `Rc<WakerData>`.
 unsafe fn wake(ptr: *const ()) {
-    // SAFETY: Raw pointer was initially created from a `Rc<WakerData>`.
+    // SAFETY: Raw pointer was initially created from a valid `Rc<WakerData>`.
     let data: Rc<WakerData> = unsafe { Rc::from_raw(ptr as *const WakerData) };
 
     // Schedule the underlying task for polling
@@ -107,10 +86,9 @@ unsafe fn wake(ptr: *const ()) {
     // `data` is dropped here, as waking by value should consume the `Waker`.
 }
 
-/// Wakes the underlying `Task` without consuming the corresponding
-/// `Rc<WakerData>`.
+/// Wakes the underlying `Task` without consuming the `Rc<WakerData>`.
 unsafe fn wake_by_ref(ptr: *const ()) {
-    // SAFETY: Raw pointer was initially created from a `Rc<WakerData>`.
+    // SAFETY: Raw pointer was initially created from a valid `Rc<WakerData>`.
     let data: Rc<WakerData> = unsafe { Rc::from_raw(ptr as *const WakerData) };
 
     // Schedule the underlying task for polling
@@ -128,6 +106,6 @@ unsafe fn wake_by_ref(ptr: *const ()) {
 
 /// Drops the `Rc` corresponding to the underlying `WakerData`.
 unsafe fn drop(ptr: *const ()) {
-    // SAFETY: Raw pointer was initially created from a `Rc<WakerData>`.
+    // SAFETY: Raw pointer was initially created from a valid `Rc<WakerData>`.
     let _: Rc<WakerData> = unsafe { Rc::from_raw(ptr as *const WakerData) };
 }
