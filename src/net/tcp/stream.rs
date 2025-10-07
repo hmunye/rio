@@ -6,15 +6,14 @@ use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 
-use crate::io::AsyncRead;
-use crate::io::AsyncWrite;
+use crate::io::{AsyncRead, AsyncWrite};
 use crate::net::socket::TcpSocket;
 use crate::rt::Runtime;
 
 /// A TCP stream between a local and a remote socket.
 ///
 /// Reading and writing to a TcpStream is usually done using the methods found
-/// on the `AsyncRead` and `AsyncWrite` traits.
+/// on the [`crate::io::AsyncReadExt`] and [`crate::io::AsyncWriteExt`] traits.
 #[derive(Debug)]
 pub struct TcpStream(std::net::TcpStream);
 
@@ -94,6 +93,12 @@ impl TryFrom<std::net::TcpStream> for TcpStream {
     }
 }
 
+impl AsRawFd for TcpStream {
+    fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {
+        self.0.as_raw_fd()
+    }
+}
+
 impl Drop for TcpStream {
     fn drop(&mut self) {
         // SAFETY: The current runtime is guaranteed to be set via thread-local
@@ -116,14 +121,30 @@ impl AsyncRead for TcpStream {
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
         match self.0.read(buf) {
-            Ok(rbytes) => Poll::Ready(Ok(rbytes)),
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                // Register for read readiness notifications.
-                let events = libc::EPOLLIN;
+            Ok(n) => {
+                println!("poll_read: read {} bytes", n);
 
+                // Register for write readiness notifications.
                 Runtime::current().scheduler.register_fd(
                     self.0.as_raw_fd(),
-                    events as u32,
+                    libc::EPOLLOUT as u32,
+                    ctx.waker().clone(),
+                );
+
+                Poll::Ready(Ok(n))
+            }
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                println!(
+                    "poll_read: would block; registering waker {:p}",
+                    ctx.waker()
+                );
+
+                println!("poll_read: called on fd: {}", self.0.as_raw_fd());
+
+                // Register for read readiness notifications.
+                Runtime::current().scheduler.register_fd(
+                    self.0.as_raw_fd(),
+                    libc::EPOLLIN as u32,
                     ctx.waker().clone(),
                 );
 
@@ -141,14 +162,28 @@ impl AsyncWrite for TcpStream {
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         match self.0.write(buf) {
-            Ok(wbytes) => Poll::Ready(Ok(wbytes)),
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                // Register for write readiness notifications.
-                let events = libc::EPOLLOUT;
+            Ok(n) => {
+                println!("poll_write: wrote {} bytes", n);
 
+                // Register for read readiness notifications.
                 Runtime::current().scheduler.register_fd(
                     self.0.as_raw_fd(),
-                    events as u32,
+                    libc::EPOLLIN as u32,
+                    ctx.waker().clone(),
+                );
+
+                Poll::Ready(Ok(n))
+            }
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                println!(
+                    "poll_write: would block; registering waker {:p}",
+                    ctx.waker()
+                );
+
+                // Register for write readiness notifications.
+                Runtime::current().scheduler.register_fd(
+                    self.0.as_raw_fd(),
+                    libc::EPOLLOUT as u32,
                     ctx.waker().clone(),
                 );
 
@@ -162,19 +197,18 @@ impl AsyncWrite for TcpStream {
         Poll::Ready(Ok(()))
     }
 
-    fn poll_shutdown(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
         match self.0.shutdown(std::net::Shutdown::Write) {
             Ok(()) => Poll::Ready(Ok(())),
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                // Register for write readiness notifications, so shutdown can
-                // be retried.
+                // Modify for write readiness notifications.
                 let events = libc::EPOLLOUT;
 
-                Runtime::current().scheduler.register_fd(
-                    self.0.as_raw_fd(),
-                    events as u32,
-                    ctx.waker().clone(),
-                );
+                // TODO: assumes the file descriptor and waker are already
+                // registered.
+                Runtime::current()
+                    .scheduler
+                    .modify_fd(self.0.as_raw_fd(), events as u32);
 
                 Poll::Pending
             }

@@ -16,7 +16,7 @@ pub(crate) struct Driver {
     /// Stores events for ready file descriptors.
     events: [libc::epoll_event; Self::EPOLL_MAX_EVENTS as usize],
     /// Associates file descriptors with their corresponding [`Waker`].
-    registered_fds: HashMap<RawFd, Waker>,
+    registered: HashMap<RawFd, Waker>,
 }
 
 impl Driver {
@@ -32,7 +32,7 @@ impl Driver {
         Driver {
             epoll_fd: Self::init_epoll_fd(),
             events: [libc::epoll_event { events: 0, u64: 0 }; Self::EPOLL_MAX_EVENTS as usize],
-            registered_fds: Default::default(),
+            registered: Default::default(),
         }
     }
 
@@ -49,7 +49,7 @@ impl Driver {
     ///
     /// This function panics if it fails to wait on file descriptor readiness.
     pub(crate) fn poll(&mut self, timeout: i32) {
-        if self.registered_fds.is_empty() {
+        if self.registered.is_empty() {
             return;
         }
 
@@ -67,11 +67,23 @@ impl Driver {
                 panic!("{}", errno!("failed to wait on epoll"));
             }
 
+            println!(
+                "register (driver): polling. all registered fds: {:?}",
+                self.registered
+            );
+
             for event in self.events.iter().take(rdfs as usize) {
                 let fd = event.u64 as i32;
+                let events = event.events;
 
-                if let Some(waker) = self.registered_fds.remove(&fd) {
-                    waker.wake();
+                println!("epoll event for fd {}: events = {:x}", fd, events);
+
+                if let Some(waker) = self.registered.get(&fd) {
+                    println!("waking waker for fd {}", fd);
+                    waker.wake_by_ref();
+                    // self.unregister_fd(fd);
+                } else {
+                    println!("no waker found for fd {}", fd);
                 }
             }
         }
@@ -81,6 +93,9 @@ impl Driver {
     /// Each event is associated to a given [`Waker`].
     ///
     /// `events` is a bit mask of event types (`epoll_ctl(2)`).
+    ///
+    /// If the given file descriptor already exists within the interest list,
+    /// the settings associated with it will be updated to `events`.
     ///
     /// # Panics
     ///
@@ -96,13 +111,60 @@ impl Driver {
             // The supplied file descriptor is already registered with this
             // `epoll` instance.
             if io::Error::last_os_error().raw_os_error() == Some(libc::EEXIST) {
+                println!(
+                    "register (driver): fd {} already registered, modifying events to: {}",
+                    fd, events
+                );
+
+                self.modify(fd, events);
                 return;
             }
 
             panic!("{}", errno!("failed to add to epoll interest list"));
         }
 
-        self.registered_fds.insert(fd, waker);
+        self.registered.insert(fd, waker);
+    }
+
+    /// Change the settings associated with the file descriptor in `epoll(7)`
+    /// interest list to the new settings specified in `events`.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the file descriptor could not be modified.
+    pub(crate) fn modify(&mut self, fd: RawFd, events: u32) {
+        let mut ev = libc::epoll_event {
+            events,
+            u64: fd as u64,
+        };
+
+        if unsafe { libc::epoll_ctl(self.epoll_fd, libc::EPOLL_CTL_MOD, fd, &raw mut ev) } == -1 {
+            // The supplied file descriptor is not registered with this `epoll`
+            // instance.
+            if io::Error::last_os_error().raw_os_error() == Some(libc::ENOENT) {
+                return;
+            }
+
+            panic!(
+                "{}",
+                errno!(
+                    "failed to modify the settings of fd {} in the epoll interest list",
+                    fd
+                )
+            );
+        }
+    }
+
+    /// Remove (unregister) the target file descriptor from the `epoll(7)`
+    /// interest list, returning the associated `Waker`, or `None` if the entry
+    /// did not exist.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the file descriptor could not be unregistered.
+    pub(crate) fn unregister(&mut self, fd: RawFd) -> Option<Waker> {
+        self.unregister_fd(fd);
+        self.registered.remove(&fd)
     }
 
     /// Remove (unregister) the target file descriptor from the `epoll(7)`
@@ -111,7 +173,7 @@ impl Driver {
     /// # Panics
     ///
     /// This function panics if the file descriptor could not be unregistered.
-    pub(crate) fn unregister(&mut self, fd: RawFd) {
+    fn unregister_fd(&self, fd: RawFd) {
         if unsafe { libc::epoll_ctl(self.epoll_fd, libc::EPOLL_CTL_DEL, fd, ptr::null_mut()) } == -1
         {
             // The supplied file descriptor is not registered with this `epoll`
@@ -122,8 +184,6 @@ impl Driver {
 
             panic!("{}", errno!("failed to remove from epoll interest list"));
         }
-
-        self.registered_fds.remove(&fd);
     }
 
     /// Creates a non-blocking `epoll(7)` instance.

@@ -134,6 +134,7 @@ impl<'a> Future for AcceptFut<'a> {
             match self.0.ln.accept() {
                 Ok((stream, addr)) => match TcpStream::try_from(stream) {
                     Ok(stream) => {
+                        println!("accept: accepted connection from {}", addr);
                         self.0.enqueue_connection(stream, addr);
                         continue;
                     }
@@ -154,8 +155,9 @@ impl<'a> Future for AcceptFut<'a> {
                     );
 
                     // Connection may have been queued during draining loop.
-                    if let Some(conn_pair) = self.0.dequeue_connection() {
-                        return Poll::Ready(Ok(conn_pair));
+                    if let Some((stream, addr)) = self.0.dequeue_connection() {
+                        println!("accept: accepted connection fd: {}", stream.as_raw_fd());
+                        return Poll::Ready(Ok((stream, addr)));
                     } else {
                         return Poll::Pending;
                     }

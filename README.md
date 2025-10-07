@@ -1,5 +1,8 @@
 # rio
 
+> [!WARNING]
+> THIS CRATE IS A WORK IN PROGRESS!
+
 Minimal asynchronous runtime for exploring `async` Rust.
 
 [![MIT Licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/hmunye/rio/blob/main/LICENSE)

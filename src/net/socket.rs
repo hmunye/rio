@@ -30,8 +30,8 @@ impl TcpSocket {
                     sin_family: libc::AF_INET as u16,
                     sin_port: v4.port().to_be(), // network-byte order
                     sin_addr: libc::in_addr {
-                        // network-byte order
-                        s_addr: u32::from_ne_bytes(v4.ip().octets()).to_be(),
+                        // Already in network-byte order.
+                        s_addr: u32::from_ne_bytes(v4.ip().octets()),
                     },
                     sin_zero: [0; 8],
                 };
@@ -46,11 +46,11 @@ impl TcpSocket {
                 let ipv6 = libc::sockaddr_in6 {
                     sin6_family: libc::AF_INET6 as u16,
                     sin6_port: v6.port().to_be(), // network-byte order
-                    sin6_flowinfo: v6.flowinfo(), // host-byte order
+                    sin6_flowinfo: v6.flowinfo(),
                     sin6_addr: libc::in6_addr {
                         s6_addr: v6.ip().octets(),
                     },
-                    sin6_scope_id: v6.scope_id(), // host-byte order
+                    sin6_scope_id: v6.scope_id(),
                 };
 
                 unsafe {
@@ -92,13 +92,6 @@ impl TcpSocket {
 
 impl Drop for TcpSocket {
     fn drop(&mut self) {
-        // SAFETY: The current runtime is guaranteed to be set via thread-local
-        // storage when entering `Runtime::block_on`, which is the only entry
-        // point for asynchronous execution, therefore, any async code,
-        // including this `Drop`, must be running within a valid runtime context
-        // to be called.
-        Runtime::current().scheduler.unregister_fd(self.fd);
-
         if !self.connected.get() {
             unsafe {
                 libc::close(self.fd);
@@ -143,11 +136,16 @@ impl Future for ConnectFut<'_> {
 
             // Mark the socket as connected. If the socket is dropped before a
             // connection is established, the file descriptor will be closed.
-            // Otherwise, it is unregistered on `Drop` but kept open so it can
-            // be re-registered for future I/O events as needed.
             self.0.connected.set(true);
 
-            Poll::Ready(Ok(std::net::TcpStream::from_raw_fd(self.0.fd)))
+            let stream = std::net::TcpStream::from_raw_fd(self.0.fd);
+
+            println!(
+                "connect (in TcpSocket): connected to remote {}",
+                stream.peer_addr().unwrap()
+            );
+
+            Poll::Ready(Ok(stream))
         }
     }
 }

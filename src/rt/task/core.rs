@@ -64,6 +64,7 @@ impl Task {
     /// Polls the inner future, returning the [`Poll`] result.
     #[inline]
     pub(crate) fn poll(&mut self, ctx: &mut Context<'_>) -> Poll<()> {
+        println!("poll (in Task): polling task {:?}", self.id);
         self.future.as_mut().poll(ctx)
     }
 }

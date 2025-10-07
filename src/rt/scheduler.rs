@@ -82,6 +82,7 @@ impl Scheduler {
     /// Marks the task associated with the provided ID as ready to be polled.
     #[inline]
     pub(crate) fn schedule_task(&self, id: TaskId) {
+        println!("schedule_task: scheduling task {:?}", id);
         self.ready.borrow_mut().push_back(id);
     }
 
@@ -103,12 +104,25 @@ impl Scheduler {
     /// Registers the given file descriptor with the I/O driver, associating it
     /// with the provided [`Waker`].
     pub(crate) fn register_fd(&self, fd: RawFd, events: u32, waker: Waker) {
-        self.io.borrow_mut().register(fd, events, waker)
+        println!(
+            "register_fd: registering waker {:?} for fd {} with events = {}",
+            waker, fd, events
+        );
+        self.io.borrow_mut().register(fd, events, waker);
+    }
+
+    /// Change the settings associated with the given file descriptor to the new
+    /// settings specified in `events`. This function should be called on a
+    /// file descriptor that is already registered.
+    pub(crate) fn modify_fd(&self, fd: RawFd, events: u32) {
+        println!("modify_fd: modifying fd {}", fd);
+        self.io.borrow_mut().modify(fd, events);
     }
 
     /// Unregisters the given file descriptor with the I/O driver.
     pub(crate) fn unregister_fd(&self, fd: RawFd) {
-        self.io.borrow_mut().unregister(fd)
+        println!("unregister_fd: removed fd {}", fd);
+        self.io.borrow_mut().unregister(fd);
     }
 
     /// Polls all tasks on the `ready` queue, processing any pending spawned
