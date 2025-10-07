@@ -1,13 +1,16 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
-use std::os::unix::io::RawFd;
 use std::task::{Context, Waker};
 use std::time::Instant;
 
+#[cfg(feature = "io")]
 use crate::rt::io::Driver;
+#[cfg(feature = "io")]
+use std::os::unix::io::RawFd;
+
 use crate::rt::task::{TaskHandle, TaskId, TaskWaker};
 use crate::rt::timer::TimerEntry;
-use crate::util::MinHeap;
+use crate::rt::util::MinHeap;
 
 type TaskEntry = (TaskHandle, TaskWaker);
 
@@ -30,6 +33,7 @@ pub(crate) struct Scheduler {
     timers: RefCell<MinHeap<TimerEntry>>,
     /// Handles registering and waiting on I/O events, waking tasks when file
     /// descriptors become ready.
+    #[cfg(feature = "io")]
     io: RefCell<Driver>,
 }
 
@@ -41,6 +45,8 @@ impl Scheduler {
             ready: Default::default(),
             pending: Default::default(),
             timers: Default::default(),
+
+            #[cfg(feature = "io")]
             io: RefCell::new(Driver::new()),
         }
     }
@@ -57,17 +63,21 @@ impl Scheduler {
         self.tasks.borrow_mut().insert(id, (task, waker));
 
         while !self.is_idle() {
-            // Use the closest expiring timer as the `timeout` for the driver,
-            // with a fallback of `-1` indicating the I/O driver should block.
-            let timeout = self
-                .timers
-                .borrow()
-                .peek()
-                .and_then(|entry| entry.deadline.checked_duration_since(Instant::now()))
-                .map(|duration| duration.as_millis() as i32)
-                .unwrap_or(-1);
+            #[cfg(feature = "io")]
+            {
+                // Use the closest expiring timer as the `timeout` for the
+                // driver, with a fallback of `-1` indicating the I/O driver
+                // should block.
+                let timeout = self
+                    .timers
+                    .borrow()
+                    .peek()
+                    .and_then(|entry| entry.deadline.checked_duration_since(Instant::now()))
+                    .map(|duration| duration.as_millis() as i32)
+                    .unwrap_or(-1);
 
-            self.io.borrow_mut().poll(timeout);
+                self.io.borrow_mut().poll(timeout);
+            }
             self.tick();
         }
     }
@@ -82,7 +92,6 @@ impl Scheduler {
     /// Marks the task associated with the provided ID as ready to be polled.
     #[inline]
     pub(crate) fn schedule_task(&self, id: TaskId) {
-        println!("schedule_task: scheduling task {:?}", id);
         self.ready.borrow_mut().push_back(id);
     }
 
@@ -103,25 +112,22 @@ impl Scheduler {
 
     /// Registers the given file descriptor with the I/O driver, associating it
     /// with the provided [`Waker`].
+    #[cfg(feature = "io")]
     pub(crate) fn register_fd(&self, fd: RawFd, events: u32, waker: Waker) {
-        println!(
-            "register_fd: registering waker {:?} for fd {} with events = {}",
-            waker, fd, events
-        );
         self.io.borrow_mut().register(fd, events, waker);
     }
 
     /// Change the settings associated with the given file descriptor to the new
     /// settings specified in `events`. This function should be called on a
     /// file descriptor that is already registered.
+    #[cfg(feature = "io")]
     pub(crate) fn modify_fd(&self, fd: RawFd, events: u32) {
-        println!("modify_fd: modifying fd {}", fd);
         self.io.borrow_mut().modify(fd, events);
     }
 
     /// Unregisters the given file descriptor with the I/O driver.
+    #[cfg(feature = "io")]
     pub(crate) fn unregister_fd(&self, fd: RawFd) {
-        println!("unregister_fd: removed fd {}", fd);
         self.io.borrow_mut().unregister(fd);
     }
 

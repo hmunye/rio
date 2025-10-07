@@ -67,23 +67,12 @@ impl Driver {
                 panic!("{}", errno!("failed to wait on epoll"));
             }
 
-            println!(
-                "register (driver): polling. all registered fds: {:?}",
-                self.registered
-            );
-
             for event in self.events.iter().take(rdfs as usize) {
                 let fd = event.u64 as i32;
                 let events = event.events;
 
-                println!("epoll event for fd {}: events = {:x}", fd, events);
-
                 if let Some(waker) = self.registered.get(&fd) {
-                    println!("waking waker for fd {}", fd);
                     waker.wake_by_ref();
-                    // self.unregister_fd(fd);
-                } else {
-                    println!("no waker found for fd {}", fd);
                 }
             }
         }
@@ -111,11 +100,6 @@ impl Driver {
             // The supplied file descriptor is already registered with this
             // `epoll` instance.
             if io::Error::last_os_error().raw_os_error() == Some(libc::EEXIST) {
-                println!(
-                    "register (driver): fd {} already registered, modifying events to: {}",
-                    fd, events
-                );
-
                 self.modify(fd, events);
                 return;
             }

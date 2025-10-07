@@ -38,7 +38,13 @@ mod spawn;
 pub use runtime::Runtime;
 pub use spawn::spawn;
 
+#[cfg(all(feature = "io", not(target_os = "linux")))]
+compile_error!("This feature is only compatible with Linux systems that support epoll(7).");
+
+#[cfg(feature = "io")]
 pub(crate) mod io;
+
 pub(crate) mod scheduler;
 pub(crate) mod task;
 pub(crate) mod timer;
+pub(crate) mod util;

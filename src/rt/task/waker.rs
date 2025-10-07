@@ -62,8 +62,6 @@ unsafe fn clone(ptr: *const ()) -> RawWaker {
     let data: Rc<WakerData> = unsafe { Rc::from_raw(ptr as *const WakerData) };
     let cloned = Rc::clone(&data);
 
-    println!("clone: cloning task waker");
-
     // Prevent `data` from being dropped, which would incorrectly decrement the
     // reference-count.
     mem::forget(data);
@@ -81,8 +79,6 @@ unsafe fn wake(ptr: *const ()) {
         let id = data.task.borrow().id;
         data.scheduler.schedule_task(id);
 
-        println!("wake: waking task {:?}", id);
-
         // Mark task as scheduled.
         data.task.borrow().scheduled.set(true)
     }
@@ -99,8 +95,6 @@ unsafe fn wake_by_ref(ptr: *const ()) {
     if !data.task.borrow().scheduled.get() {
         let id = data.task.borrow().id;
         data.scheduler.schedule_task(id);
-
-        println!("wake_by_ref: waking task {:?}", id);
 
         // Mark task as scheduled.
         data.task.borrow().scheduled.set(true)

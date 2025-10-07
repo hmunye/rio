@@ -10,12 +10,12 @@ fn main() {
         let res = 1 + 2;
 
         rio::spawn(async move {
-            rio::time::sleep(Duration::from_secs(1)).await;
+            rio::time::sleep(Duration::from_secs(5)).await;
             println!("printing result in spawned task 1: {res}");
         });
 
         rio::spawn(async move {
-            rio::time::sleep(Duration::from_secs(5)).await;
+            rio::time::sleep(Duration::from_secs(3)).await;
             println!("printing result in spawned task 2: {res}");
         });
 

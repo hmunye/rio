@@ -1,4 +1,4 @@
-//! Minimal asynchronous runtime for exploring `async` Rust.
+//! Minimal, single-threaded, asynchronous runtime for exploring `async` Rust.
 
 #![warn(
     missing_debug_implementations,
@@ -8,14 +8,7 @@
 )]
 #![deny(unused_must_use)]
 
-#[cfg(not(target_os = "linux"))]
-compile_error!("This crate is only compatible with Linux systems that support epoll(7).");
-
 pub mod rt;
 pub use rt::spawn;
 
-pub mod io;
-pub mod net;
 pub mod time;
-
-pub(crate) mod util;

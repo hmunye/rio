@@ -9,8 +9,13 @@ repository = "https://github.com/hmunye/rio"
 description = """
 Minimal asynchronous runtime for exploring `async` Rust.
 """
-categories = ["asynchronous", "network-programming"]
-keywords = ["io", "async", "non-blocking", "futures"]
+categories = ["asynchronous"]
+keywords = ["async", "non-blocking", "futures"]
 
 [dependencies]
-libc = "0.2.176"
+libc = { version = "0.2.176", optional = true }
+
+[features]
+# Include nothing by default
+default = []
+io = ["libc"]

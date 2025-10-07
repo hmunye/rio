@@ -65,6 +65,7 @@ impl Runtime {
         let task = Rc::new(RefCell::new(Task::new(async move {
             *out_clone.borrow_mut() = Some(future.await);
         })));
+
         let waker = TaskWaker::new(Rc::clone(&task), Rc::clone(&self.scheduler));
 
         self.scheduler.block_on_task(task, waker);

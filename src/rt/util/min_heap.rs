@@ -167,6 +167,7 @@ impl<T: Ord> MinHeap<T> {
     /// Returns a reference to the smallest item in the binary heap, or [`None`]
     /// if it is empty.
     #[inline]
+    #[allow(unused)]
     pub(crate) fn peek(&self) -> Option<&T> {
         self.buf.first()
     }
