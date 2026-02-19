@@ -13,12 +13,12 @@
 /// [pop]:  MinHeap::pop
 /// [peek]: MinHeap::peek
 #[derive(Debug)]
-pub(crate) struct MinHeap<T> {
+pub struct MinHeap<T> {
     /// Internal buffer used for cache locality and fast index-based access.
     buf: Vec<T>,
 }
 
-pub(crate) struct IntoIterSorted<T> {
+pub struct IntoIterSorted<T> {
     inner: MinHeap<T>,
 }
 
@@ -42,7 +42,7 @@ struct SiftInfo(u64);
 
 impl SiftInfo {
     #[inline]
-    fn new(pos: usize, should_sift_up: bool) -> Self {
+    const fn new(pos: usize, should_sift_up: bool) -> Self {
         // `usize` is platform-dependent (32-bit or 64-bit), so converting to
         // `u64` ensures consistency. The sift direction is stored in the most
         // significant bit (MSB), which won't interfere with valid position
@@ -54,25 +54,25 @@ impl SiftInfo {
     }
 
     #[inline]
-    fn pos(&self) -> usize {
+    const fn pos(&self) -> usize {
         (self.0 & !(1 << 63)) as usize
     }
 
     #[inline]
-    fn should_sift_up(&self) -> bool {
+    const fn should_sift_up(&self) -> bool {
         ((self.0 >> 63) & 0x1) != 0
     }
 
     #[inline]
     #[allow(unused)]
-    fn should_sift_down(&self) -> bool {
+    const fn should_sift_down(&self) -> bool {
         ((self.0 >> 63) & 0x1) == 0
     }
 }
 
 /// Guard used to `heapify` the binary heap automatically on [`Drop`].
 ///
-/// https://doc.rust-lang.org/src/alloc/collections/binary_heap/mod.rs.html#484
+/// <https://doc.rust-lang.org/src/alloc/collections/binary_heap/mod.rs.html#484>
 struct HeapifyGuard<'a, T: Ord> {
     heap: &'a mut MinHeap<T>,
     sift_info: SiftInfo,
@@ -85,8 +85,7 @@ impl<T: Ord> Drop for HeapifyGuard<'_, T> {
         if self.sift_info.should_sift_up() {
             debug_assert!(
                 pos < self.heap.len(),
-                "invalid position provided when sifting up: {}",
-                pos
+                "invalid position provided when sifting up: {pos}"
             );
 
             // SAFETY: `pos` is < heap.len(), making the range `0..=pos` valid.
@@ -96,8 +95,7 @@ impl<T: Ord> Drop for HeapifyGuard<'_, T> {
         } else {
             debug_assert!(
                 pos <= self.heap.len(),
-                "invalid position provided when sifting down: {}",
-                pos
+                "invalid position provided when sifting down: {pos}"
             );
 
             // SAFETY: `pos` is <= heap.len(), making the range `0..pos` valid.
@@ -254,11 +252,11 @@ impl<T: Ord> MinHeap<T> {
                 break;
             }
 
-            let mut min = pos;
-
-            if self.buf[pos] >= self.buf[left] {
-                min = left;
-            }
+            let mut min = if self.buf[pos] >= self.buf[left] {
+                left
+            } else {
+                pos
+            };
 
             // Check if the right child exists before comparing. `&&` is
             // short-circuiting, so the second condition won't run if `right`
@@ -268,12 +266,12 @@ impl<T: Ord> MinHeap<T> {
             }
 
             // Check if a smaller child item was encountered.
-            if min != pos {
-                self.buf.swap(min, pos);
-                pos = min;
-            } else {
+            if min == pos {
                 // Can no longer sift down.
                 break;
+            } else {
+                self.buf.swap(min, pos);
+                pos = min;
             }
         }
 

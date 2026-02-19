@@ -11,12 +11,12 @@ thread_local! {
 }
 
 /// Shared handle to a [`Task`] for single-threaded contexts.
-pub(crate) type TaskHandle = Rc<RefCell<Task>>;
+pub type TaskHandle = Rc<RefCell<Task>>;
 
 /// Unique identifier for a [`Task`].
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub(crate) struct TaskId(pub(crate) u64);
+pub struct TaskId(pub(crate) u64);
 
 impl TaskId {
     #[inline]
@@ -40,7 +40,7 @@ impl From<u64> for TaskId {
 /// [runtime].
 ///
 /// [runtime]: crate::rt
-pub(crate) struct Task {
+pub struct Task {
     /// Used to uniquely identify a task.
     pub(crate) id: TaskId,
     /// Pinned, heap-allocated, type-erased [`Future`].
@@ -73,6 +73,6 @@ impl fmt::Debug for Task {
         f.debug_struct("Task")
             .field("id", &self.id)
             .field("scheduled", &self.scheduled)
-            .finish()
+            .finish_non_exhaustive()
     }
 }

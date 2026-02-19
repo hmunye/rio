@@ -16,7 +16,7 @@ type TaskEntry = (TaskHandle, TaskWaker);
 
 /// Single-threaded `scheduler` and `executor`.
 #[derive(Debug)]
-pub(crate) struct Scheduler {
+pub struct Scheduler {
     /// Stores all live tasks keyed by their ID and paired with a [`TaskWaker`].
     tasks: RefCell<HashMap<TaskId, TaskEntry>>,
     /// Queue of task IDs ready to be polled. Storing only IDs keeps the queue
@@ -41,10 +41,10 @@ impl Scheduler {
     /// Creates a new `Scheduler`.
     pub(crate) fn new() -> Self {
         Scheduler {
-            tasks: Default::default(),
-            ready: Default::default(),
-            pending: Default::default(),
-            timers: Default::default(),
+            tasks: RefCell::default(),
+            ready: RefCell::default(),
+            pending: RefCell::default(),
+            timers: RefCell::default(),
 
             #[cfg(feature = "io")]
             io: RefCell::new(Driver::new()),

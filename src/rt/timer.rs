@@ -4,7 +4,7 @@ use std::time::Instant;
 
 /// Wrapper for a deadline and associated [`Waker`].
 #[derive(Debug)]
-pub(crate) struct TimerEntry {
+pub struct TimerEntry {
     /// When the timer is set to expire.
     pub(crate) deadline: Instant,
     /// The associated waker to wake when the timer expires.

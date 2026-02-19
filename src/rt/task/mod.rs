@@ -5,7 +5,7 @@
 //! [runtime]: crate::rt
 
 mod core;
-pub(crate) use core::{Task, TaskHandle, TaskId};
+pub use core::{Task, TaskHandle, TaskId};
 
 mod waker;
-pub(crate) use waker::TaskWaker;
+pub use waker::TaskWaker;

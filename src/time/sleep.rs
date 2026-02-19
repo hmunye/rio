@@ -16,7 +16,7 @@ pub struct SleepFut {
 
 impl SleepFut {
     /// Creates a new `Sleep`.
-    pub(crate) fn new_timeout(duration: Instant) -> Self {
+    pub(crate) const fn new_timeout(duration: Instant) -> Self {
         SleepFut {
             wake_at: duration,
             registered: false,
@@ -51,13 +51,15 @@ impl Future for SleepFut {
 ///
 /// This is equivalent to calling `sleep_until(Instant::now() + duration)`, and
 /// functions as an asynchronous alternative to [`std::thread::sleep`].
+#[must_use]
 pub fn sleep(duration: Duration) -> SleepFut {
     // Wait for a relative amount of time starting from now.
     SleepFut::new_timeout(Instant::now() + duration)
 }
 
 /// Waits until `deadline` is reached.
-pub fn sleep_until(deadline: Instant) -> SleepFut {
+#[must_use]
+pub const fn sleep_until(deadline: Instant) -> SleepFut {
     // Wait until the specific absolute time.
     SleepFut::new_timeout(deadline)
 }

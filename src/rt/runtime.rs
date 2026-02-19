@@ -44,6 +44,7 @@ impl Drop for EnterGuard {
 impl Runtime {
     /// Creates a new `Runtime` instance.
     #[inline]
+    #[must_use]
     pub fn new() -> Self {
         Runtime {
             scheduler: Rc::new(Scheduler::new()),
@@ -55,6 +56,10 @@ impl Runtime {
     ///
     /// This function blocks the current thread until `future` resolves,
     /// returning its output.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the future's output could not be retrieved.
     pub fn block_on<F: Future + 'static>(&self, future: F) -> F::Output {
         let _enter = EnterGuard::new(self);
 
@@ -83,15 +88,16 @@ impl Runtime {
     /// This function panics if not called within the context of a runtime.
     pub(crate) fn current() -> &'static Runtime {
         CURRENT_RUNTIME.with(|rt| {
-            if let Some(ptr) = rt.get() {
-                // SAFETY: The thread-local holds a raw pointer to a runtime
-                // instance. This pointer is only set via the entry point
-                // `Runtime::block_on` and cleared when the created `EnterGuard`
-                // is dropped.
-                unsafe { &*ptr }
-            } else {
-                panic!("runtime function called outside of a runtime context");
-            }
+            rt.get().map_or_else(
+                || panic!("runtime function called outside of a runtime context"),
+                |ptr| {
+                    // SAFETY: The thread-local holds a raw pointer to a runtime
+                    // instance. This pointer is only set via the entry point
+                    // `Runtime::block_on` and cleared when the created
+                    // `EnterGuard` is dropped.
+                    unsafe { &*ptr }
+                },
+            )
         })
     }
 
