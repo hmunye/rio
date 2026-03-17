@@ -1,6 +1,6 @@
 # rio
 
-Minimal asynchronous runtime for Rust.
+Minimal Asynchronous Runtime for Rust.
 
 > [!WARNING]
 > This project is experimental and not intended for production use.
