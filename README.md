@@ -6,6 +6,7 @@ Minimal asynchronous runtime for Rust.
 > This project is experimental and not intended for production use.
 
 [![MIT Licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/hmunye/rio/blob/main/LICENSE)
+[![Build Status](https://github.com/hmunye/rio/workflows/CI/badge.svg)](https://github.com/hmunye/rio/actions?query=workflow%3ACI+branch%3Amain)
 [![Dependency Status](https://deps.rs/repo/github/hmunye/rio/status.svg)](https://deps.rs/repo/github/hmunye/rio)
 
 ## Quick Start
