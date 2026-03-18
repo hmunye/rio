@@ -8,13 +8,21 @@ pub struct Handle {
 
 /// Runtime context guard.
 ///
-/// Returned by [`Runtime::enter`] and [`Handle::enter`], the context guard
-/// exits the runtime context on `Drop`.
+/// Returned by [`Runtime::enter`], the context guard exits the runtime context
+/// on `Drop`.
 ///
-/// [`Runtime::enter`]: fn@crate::runtime::Runtime::enter
+/// [`Runtime::enter`]: crate::runtime::Runtime::enter
 #[derive(Debug)]
 #[must_use]
 pub struct EnterGuard;
+
+impl EnterGuard {
+    #[inline]
+    fn new(handle: &scheduler::Handle) -> Self {
+        context::set_current(handle);
+        EnterGuard {}
+    }
+}
 
 impl Drop for EnterGuard {
     fn drop(&mut self) {
@@ -23,19 +31,23 @@ impl Drop for EnterGuard {
 }
 
 impl Handle {
-    /// Creates a new runtime `Handle`.
     #[inline]
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Handle {
+            // Initialize a single-threaded scheduler.
             inner: scheduler::Handle::new(),
         }
     }
 
-    /// Enters the runtime context, enabling executor-related operations.
     #[inline]
     pub fn enter(&self) -> EnterGuard {
-        context::set_current(&self.inner);
-        EnterGuard {}
+        EnterGuard::new(&self.inner)
+    }
+
+    #[inline]
+    pub fn block_on<F: Future + 'static>(&self, fut: F) -> F::Output {
+        let _guard = self.enter();
+        self.inner.block_on(fut)
     }
 }

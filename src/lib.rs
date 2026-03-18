@@ -2,7 +2,7 @@
 //!
 //! Modern operating systems provide `multitasking`, the capability to
 //! interleave the execution of multiple tasks concurrently. The two primary
-//! models for interleaving tasks are `preemptive` and `cooperative`.
+//! techniques for scheduling tasks are `preemptive` and `cooperative`.
 //!
 //! **Preemptive multitasking** is the method in which the OS kernel dictates
 //! when tasks (`threads`) are scheduled, how long they run, and when they are
