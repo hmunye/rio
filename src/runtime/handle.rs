@@ -1,9 +1,10 @@
-use crate::runtime::{context, scheduler};
+use crate::runtime::{context, scheduler, time};
 
 /// Handle for interacting with the runtime.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Handle {
-    inner: scheduler::Handle,
+    pub(crate) scheduler: scheduler::Handle,
+    pub(crate) time: time::Handle,
 }
 
 /// Runtime context guard.
@@ -16,7 +17,7 @@ pub struct EnterGuard;
 
 impl EnterGuard {
     #[inline]
-    fn new(handle: &scheduler::Handle) -> Self {
+    fn new(handle: &Handle) -> Self {
         context::set_current(handle);
         EnterGuard {}
     }
@@ -33,19 +34,19 @@ impl Handle {
     #[must_use]
     pub fn new() -> Self {
         Handle {
-            // Initialize a single-threaded scheduler.
-            inner: scheduler::Handle::new(),
+            scheduler: scheduler::Handle::new(),
+            time: time::Handle::new(),
         }
     }
 
     #[inline]
     pub fn block_on<F: Future + 'static>(&self, fut: F) -> F::Output {
         let _guard = self.enter();
-        self.inner.block_on(fut)
+        self.scheduler.block_on(fut)
     }
 
     #[inline]
     fn enter(&self) -> EnterGuard {
-        EnterGuard::new(&self.inner)
+        EnterGuard::new(self)
     }
 }

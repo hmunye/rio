@@ -1,10 +1,10 @@
 use std::cell::{Cell, RefCell};
 
-use crate::runtime::{scheduler, task};
+use crate::{runtime, task};
 
 struct Context {
     /// Runtime handle associated with the current thread.
-    current: RefCell<Option<scheduler::Handle>>,
+    current: RefCell<Option<runtime::Handle>>,
     /// ID of the "active" task on the current thread.
     current_task_id: Cell<Option<task::Id>>,
 }
@@ -24,7 +24,7 @@ thread_local! {
 ///
 /// Panics if the current thread is already associated with a runtime handle.
 #[inline]
-pub fn set_current(handle: &scheduler::Handle) {
+pub fn set_current(handle: &runtime::Handle) {
     CONTEXT.with(|ctx| {
         let mut current = ctx.current.borrow_mut();
         assert!(
@@ -48,7 +48,7 @@ pub fn drop_current() {
 ///
 /// Panics if the current thread is not within a runtime context.
 #[inline]
-pub fn with_current<R, F: FnOnce(&scheduler::Handle) -> R>(f: F) -> R {
+pub fn with_current<R, F: FnOnce(&runtime::Handle) -> R>(f: F) -> R {
     CONTEXT
         .with(|ctx| ctx.current.borrow().as_ref().map(f))
         .expect("no runtime context associated with the current thread")

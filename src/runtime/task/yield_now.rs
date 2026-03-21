@@ -42,7 +42,7 @@ pub async fn yield_now() {
         yielded = true;
 
         // Push current task ID to the _back_ of the pending queue.
-        context::with_current(|handle| handle.schedule_task(task::id()));
+        context::with_current(|handle| handle.scheduler.schedule_task(task::id()));
 
         Poll::Pending
     })

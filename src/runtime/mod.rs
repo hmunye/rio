@@ -13,10 +13,12 @@ pub mod task;
 mod runtime;
 pub use runtime::Runtime;
 
+mod time;
+
 mod handle;
 pub(crate) use handle::Handle;
 
-mod context;
+pub(crate) mod context;
 
 mod scheduler;
 pub(crate) use scheduler::Scheduler;

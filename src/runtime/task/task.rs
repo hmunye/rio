@@ -2,9 +2,9 @@ use std::cell::RefCell;
 use std::fmt;
 use std::pin::Pin;
 use std::rc::{Rc, Weak};
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, Waker};
 
-use crate::runtime::task::{Id, LocalWaker};
+use crate::runtime::task::Id;
 
 /// Lifecycle stages of a task.
 #[derive(Debug, Default)]
@@ -13,13 +13,14 @@ pub enum Stage {
     Running,
     Finished(Box<dyn std::any::Any>),
     Consumed,
+    Canceled,
 }
 
 /// Shared state for accessing a task's resolved output.
 #[derive(Debug, Default)]
 pub struct TaskState {
     pub(crate) stage: RefCell<Stage>,
-    pub(crate) waker: RefCell<Option<LocalWaker>>,
+    pub(crate) waker: RefCell<Option<Waker>>,
 }
 
 /// Lightweight, non-blocking unit of execution ("green thread"), managed by the
@@ -53,6 +54,11 @@ impl Task {
     #[inline]
     pub fn poll(&mut self, cx: &mut Context<'_>) -> Poll<()> {
         self.fut.as_mut().poll(cx)
+    }
+
+    #[inline]
+    pub fn is_canceled(&self) -> bool {
+        matches!(*self.state.stage.borrow(), Stage::Canceled)
     }
 
     #[inline]

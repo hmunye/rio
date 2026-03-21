@@ -99,6 +99,8 @@ impl Scheduler {
 
     /// Polls all tasks currently in the pending queue.
     fn tick(&self) {
+        context::with_current(|handle| handle.time.process_timers());
+
         // We need to Limit the scope of any mutable borrows of `self.pending`
         // and `self.tasks` to avoid mutable aliasing, as polling a task may
         // trigger child tasks to interact with the scheduler (e.g., schedule
@@ -117,11 +119,16 @@ impl Scheduler {
                     .remove(&id)
                     .expect("all pending task IDs should map to and active task entry");
 
+                // Ensure we don't try to poll a completed or canceled task.
+                if task.is_complete() || task.is_canceled() {
+                    continue;
+                }
+
                 let mut cx = Context::from_waker(&waker);
 
                 let prev_id = context::set_current_task_id(Some(id));
 
-                if task.poll(&mut cx).is_pending() || !task.is_complete() {
+                if task.poll(&mut cx).is_pending() {
                     self.register_task_with_waker(task, waker);
                 }
 

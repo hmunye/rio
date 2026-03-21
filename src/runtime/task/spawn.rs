@@ -50,7 +50,7 @@ pub fn spawn<F: Future + 'static>(fut: F) -> JoinHandle<F::Output> {
     let id = task.id;
     let state = Rc::clone(&task.state);
 
-    context::with_current(|handle| handle.spawn_task(task));
+    context::with_current(|handle| handle.scheduler.spawn_task(task));
 
     JoinHandle::new(id, state)
 }

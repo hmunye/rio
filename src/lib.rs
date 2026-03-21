@@ -51,5 +51,6 @@
 #![allow(clippy::struct_excessive_bools)]
 
 pub mod runtime;
+pub mod time;
 
 pub use runtime::task::{self, spawn};

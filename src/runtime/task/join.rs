@@ -21,6 +21,15 @@ pub enum JoinError {
     Canceled { task_id: task::Id },
 }
 
+impl JoinError {
+    /// Returns `true` if the error was caused by a task cancellation.
+    #[inline]
+    #[must_use]
+    pub const fn is_canceled(&self) -> bool {
+        matches!(&self, JoinError::Canceled { .. })
+    }
+}
+
 impl fmt::Display for JoinError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
@@ -77,13 +86,57 @@ pub struct JoinHandle<T: 'static> {
 }
 
 impl<T> JoinHandle<T> {
-    /// Returns the [`Id`] of the joined task.
+    /// Returns the [`Id`] of task associated with the handle.
     ///
     /// [`Id`]: task::Id
     #[inline]
     #[must_use]
     pub const fn id(&self) -> task::Id {
         self.task_id
+    }
+
+    /// Cancels the task associated with the handle.
+    ///
+    /// Awaiting a canceled task might complete if the task was already finished
+    /// at the time of cancellation, but most likely it will fail with a
+    /// [`JoinError::Canceled`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let rt = rio::runtime::Runtime::new();
+    ///
+    /// rt.block_on(async {
+    ///     let mut handles = Vec::new();
+    ///
+    ///     handles.push(rio::spawn(async {
+    ///         rio::time::sleep(std::time::Duration::from_secs(10)).await;
+    ///         true
+    ///     }));
+    ///
+    ///     handles.push(rio::spawn(async {
+    ///         rio::time::sleep(std::time::Duration::from_secs(10)).await;
+    ///         false
+    ///     }));
+    ///
+    ///     for handle in &handles {
+    ///         handle.cancel();
+    ///     }
+    ///
+    ///     for handle in handles {
+    ///         assert!(handle.await.unwrap_err().is_canceled());
+    ///     }
+    /// });
+    /// ```
+    #[inline]
+    pub fn cancel(&self) {
+        if matches!(
+            self.state.stage.replace(task::Stage::Canceled),
+            task::Stage::Running
+        ) && let Some(waker) = self.state.waker.take()
+        {
+            waker.wake();
+        }
     }
 
     #[inline]
@@ -95,11 +148,6 @@ impl<T> JoinHandle<T> {
         }
     }
 
-    /// Takes the joined task's output.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the joined task is not finished or has already been consumed.
     pub(crate) fn take_output(&self) -> Result<T, JoinError> {
         match self.state.stage.replace(task::Stage::Consumed) {
             task::Stage::Finished(out) => match out.downcast::<T>() {
@@ -110,6 +158,9 @@ impl<T> JoinHandle<T> {
                     actual: std::any::type_name_of_val(&err),
                 }),
             },
+            task::Stage::Canceled => Err(JoinError::Canceled {
+                task_id: self.task_id,
+            }),
             _ => panic!("JoinHandle polled after completion"),
         }
     }
@@ -127,14 +178,7 @@ impl<T: std::fmt::Debug> Future for JoinHandle<T> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         if matches!(*self.state.stage.borrow(), task::Stage::Running) {
             if self.state.waker.borrow().is_none() {
-                // Store the `LocalWaker` to be notified when output becomes
-                // available.
-                unsafe {
-                    self.state.waker.replace(Some(std::mem::transmute::<
-                        std::task::Waker,
-                        task::LocalWaker,
-                    >(cx.waker().clone())));
-                }
+                self.state.waker.replace(Some(cx.waker().clone()));
             }
 
             return Poll::Pending;

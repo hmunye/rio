@@ -4,8 +4,8 @@ use std::task::{RawWaker, RawWakerVTable, Waker};
 
 use crate::runtime::{scheduler, task};
 
-/// Wrapper around [`Waker`] that enforces `!Send + !Sync` for single-threaded
-/// use.
+/// A `LocalWaker` is analogous to a [`Waker`], but it does not implement
+/// [`Send`] or [`Sync`].
 #[derive(Debug)]
 pub struct LocalWaker {
     waker: Waker,
