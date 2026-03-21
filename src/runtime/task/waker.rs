@@ -4,11 +4,12 @@ use std::task::{RawWaker, RawWakerVTable, Waker};
 
 use crate::runtime::{scheduler, task};
 
-/// Wrapper around [`Waker`] that enforces `!Send + !Sync`.
+/// Wrapper around [`Waker`] that enforces `!Send + !Sync` for single-threaded
+/// use.
 #[derive(Debug)]
 pub struct LocalWaker {
     waker: Waker,
-    // `Waker` is `Send + Sync` by default.
+    // `Waker` is `Send + Sync` by default. `Rc` is `!Send + !Sync`.
     _marker: PhantomData<Rc<()>>,
 }
 
@@ -48,49 +49,49 @@ impl std::ops::Deref for LocalWaker {
     }
 }
 
-/// Returns a new `RawWaker`, incrementing the reference count of the underlying
+/// Returns a new `RawWaker`, incrementing the reference count of the
 /// `Rc<WakerData>`.
 unsafe fn clone(ptr: *const ()) -> RawWaker {
-    // SAFETY: Raw pointer was created by a call to `Rc::into_raw`.
+    // SAFETY: `ptr` was created from a call to `Rc::into_raw`.
     let data: Rc<WakerData> = unsafe { Rc::from_raw(ptr.cast::<WakerData>()) };
 
     let cloned = Rc::clone(&data);
 
-    // Ensure `data` isn't dropped to prevent decrementing the reference count.
+    // Ensure `data` isn't dropped to prevent decrementing the reference count
+    // when cloning.
     std::mem::forget(data);
 
     LocalWaker::new_raw_waker(cloned)
 }
 
-/// Wakes the underlying `Task` and decrements the reference count of
+/// Wakes the underlying `Task` and decrements the reference count of the
 /// `Rc<WakerData>`.
 unsafe fn wake(ptr: *const ()) {
-    // SAFETY: Raw pointer was created by a call to `Rc::into_raw`.
+    // SAFETY: `ptr` was created from a call to `Rc::into_raw`.
     let data: Rc<WakerData> = unsafe { Rc::from_raw(ptr.cast::<WakerData>()) };
 
-    // Schedule the task for polling.
+    // Schedule the task for polling on next "tick".
     data.handle.schedule_task(data.task_id);
 
     // `data` is dropped here, which decrements the reference count.
 }
 
-/// Wakes the underlying `Task` without decrementing the reference count of
+/// Wakes the underlying `Task` without decrementing the reference count of the
 /// `Rc<WakerData>`.
 unsafe fn wake_by_ref(ptr: *const ()) {
-    // SAFETY: Raw pointer was created by a call to `Rc::into_raw`.
+    // SAFETY: `ptr` was created from a call to `Rc::into_raw`.
     let data: Rc<WakerData> = unsafe { Rc::from_raw(ptr.cast::<WakerData>()) };
 
-    // Schedule the task for polling.
+    // Schedule the task for polling on next "tick".
     data.handle.schedule_task(data.task_id);
 
-    // Ensure `data` isn't dropped to prevent decrementing the reference count.
+    // Ensure `data` isn't dropped to prevent decrementing the reference count
+    // when waking by reference.
     std::mem::forget(data);
 }
 
-/// Decrements the reference count of the underlying `Rc<WakerData>`.
+/// Decrements the reference count of the `Rc<WakerData>`.
 unsafe fn drop(ptr: *const ()) {
-    // SAFETY: Raw pointer was created by a call to `Rc::into_raw`.
-    //
-    // Dropping `Rc<WakerData>` here will decrement its reference count.
+    // SAFETY: `ptr` was created from a call to `Rc::into_raw`.
     let _: Rc<WakerData> = unsafe { Rc::from_raw(ptr.cast::<WakerData>()) };
 }

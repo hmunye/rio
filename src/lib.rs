@@ -7,10 +7,10 @@
 //! **Preemptive multitasking** is the method in which the OS kernel dictates
 //! when tasks (`threads`) are scheduled, how long they run, and when they are
 //! preempted. Since threads can be interrupted at arbitrary points during
-//! execution, the kernel must save the thread's execution state, including the
-//! CPU register values, in a process known as a `context switch`. The thread's
-//! stack, which is allocated separately within the process's virtual address
-//! space, does not need to be saved. This design minimizes the context switch
+//! execution, the kernel must save the thread's execution state, including CPU
+//! registers, in a process known as a `context switch`. The thread's stack,
+//! which is allocated separately within the process's virtual address space,
+//! does not need to be saved. This design minimizes the context switch
 //! overhead, as the kernel only needs to save and restore CPU registers. The
 //! primary advantage of preemptive multitasking is that it allows the kernel to
 //! exert fine-grained control over thread execution, ensuring fair scheduling
@@ -22,22 +22,21 @@
 //! yielding CPU time to tasks themselves. When combined with asynchronous
 //! programming, cooperative multitasking allows tasks to continue executing
 //! until they can no longer make progress. As the tasks are responsible for
-//! yielding control, they only need to preserve a minimal set of state, such as
-//! a subset of local variables, to resume execution later. This reduces the
-//! memory overhead per task, as it avoids the need for each task to maintain
-//! its own stack. Rust’s `async/await` model leverages this by storing live
-//! local variables across suspension points (`await` points) in a compiler
-//! generated state machine, allowing multiple tasks to share the same stack.
-//! However, the downside of cooperative multitasking is that a misbehaving task
-//! can potentially never yield, preventing other tasks from making progress,
-//! which can lead to deadlocks if not properly managed.
+//! yielding control, they only need to preserve a minimal set of state in order
+//! to resume execution at a later point. This reduces the memory overhead per
+//! task, as it avoids the need for each task to maintain its own stack. Rust’s
+//! `async/await` model leverages this by storing live local variables across
+//! suspension points (`await` points) in a compiler generated state machine,
+//! allowing multiple tasks to share the process's stack. However, the downside
+//! of cooperative multitasking is that a misbehaving task can potentially never
+//! yield, preventing other tasks from making progress, which can lead to
+//! deadlocks if not properly managed.
 //!
 //! Unlike preemptive multitasking, where the OS kernel schedules tasks and
 //! manages context switching, cooperative multitasking requires an explicit
 //! `runtime` to manage task scheduling and polling. The runtime is responsible
 //! for ensuring tasks are executed in a fair and efficient manner, scheduling
-//! them to make progress in accordance with their state transitions and
-//! eventual yields.
+//! them to make progress in accordance with their state transitions and yields.
 
 #![deny(clippy::unwrap_used)]
 #![warn(clippy::pedantic)]
@@ -52,3 +51,5 @@
 #![allow(clippy::struct_excessive_bools)]
 
 pub mod runtime;
+
+pub use runtime::task::{self, spawn};

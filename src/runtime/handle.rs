@@ -8,10 +8,8 @@ pub struct Handle {
 
 /// Runtime context guard.
 ///
-/// Returned by [`Runtime::enter`], the context guard exits the runtime context
+/// Returned by [`Handle::enter`], the context guard exits the runtime context
 /// on `Drop`.
-///
-/// [`Runtime::enter`]: crate::runtime::Runtime::enter
 #[derive(Debug)]
 #[must_use]
 pub struct EnterGuard;
@@ -26,7 +24,7 @@ impl EnterGuard {
 
 impl Drop for EnterGuard {
     fn drop(&mut self) {
-        context::unset_current();
+        context::drop_current();
     }
 }
 
@@ -41,13 +39,13 @@ impl Handle {
     }
 
     #[inline]
-    pub fn enter(&self) -> EnterGuard {
-        EnterGuard::new(&self.inner)
-    }
-
-    #[inline]
     pub fn block_on<F: Future + 'static>(&self, fut: F) -> F::Output {
         let _guard = self.enter();
         self.inner.block_on(fut)
+    }
+
+    #[inline]
+    fn enter(&self) -> EnterGuard {
+        EnterGuard::new(&self.inner)
     }
 }

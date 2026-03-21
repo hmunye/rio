@@ -1,10 +1,9 @@
 //! `rio` Runtime
 //!
 //! The `rio` runtime provides a single-threaded task scheduler for executing
-//! asynchronous [`tasks`]. It manages task lifecycle, scheduling, and polling
-//! of futures, enabling cooperative multitasking without blocking the
-//! underlying thread. Tasks are executed until they yield, allowing the
-//! runtime to efficiently run multiple tasks concurrently on the same thread.
+//! asynchronous [`tasks`]. It manages the task lifecycle, including scheduling
+//! and polling, enabling cooperative multitasking without blocking the
+//! current thread.
 //!
 //! [`tasks`]: crate::runtime::task
 
@@ -15,7 +14,6 @@ mod runtime;
 pub use runtime::Runtime;
 
 mod handle;
-pub use handle::EnterGuard;
 pub(crate) use handle::Handle;
 
 mod context;

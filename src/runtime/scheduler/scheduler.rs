@@ -1,89 +1,131 @@
+use std::cell::UnsafeCell;
 use std::collections::{HashMap, VecDeque};
-use std::mem::MaybeUninit;
+use std::rc::Rc;
 use std::task::Context;
 
-use crate::runtime::scheduler;
 use crate::runtime::task::{self, Task};
+use crate::runtime::{context, scheduler};
+use crate::task::JoinHandle;
 
-/// Single-threaded `scheduler` for the runtime.
+/// Single-threaded `scheduler` for the `rio` runtime.
 #[derive(Debug)]
 pub struct Scheduler {
-    /// Stores active tasks, mapping each task ID to its [`Task`] and
-    /// [`LocalWaker`].
+    /// Stores "active" tasks, mapping each task [`Id`] to its [`Task`] and an
+    /// associated [`LocalWaker`].
     ///
+    /// [`Id`]: task::Id
     /// [`LocalWaker`]: task::LocalWaker
-    tasks: HashMap<task::Id, (Task, task::LocalWaker)>,
-    /// Queue of task IDs ready to be polled.
-    ready: VecDeque<task::Id>,
+    tasks: UnsafeCell<HashMap<task::Id, (Task, task::LocalWaker)>>,
+    /// Queue of task [`Id`]s ready to be polled.
+    ///
+    /// [`Id`]: task::Id
+    pending: UnsafeCell<VecDeque<task::Id>>,
 }
 
 impl Scheduler {
     #[inline]
+    #[must_use]
     pub fn new() -> Self {
         Scheduler {
-            tasks: HashMap::default(),
-            ready: VecDeque::default(),
+            tasks: UnsafeCell::default(),
+            pending: UnsafeCell::default(),
         }
     }
 
     /// Runs the provided future to completion on the current thread, blocking
-    /// until the scheduler becomes idle (i.e., no active tasks remain).
+    /// until the scheduler becomes idle (i.e., no active tasks remaining).
     pub fn block_on_fut<F: Future + 'static>(
-        &mut self,
+        &self,
         handle: scheduler::Handle,
         fut: F,
     ) -> F::Output {
-        let mut output = MaybeUninit::<F::Output>::uninit();
-        let output_ptr = &raw mut output;
+        // NOTE: Still ends up cloning the waker when polling `JoinHandle`.
+        let task = Task::new_with(|weak| async move {
+            let res = fut.await;
 
-        let task = Task::new(async move {
-            // SAFETY: `output_ptr` is guaranteed to be non-null and properly
-            // aligned. The pointer remains valid for the duration of the task,
-            // as it is allocated on the stack and is not used outside of the
-            // current function. Since the runtime is single-threaded, all tasks
-            // are executed on the same thread.
-            unsafe {
-                (*output_ptr).write(fut.await);
+            if let Some(state) = weak.upgrade() {
+                state.stage.replace(task::Stage::Finished(Box::new(res)));
             }
         });
 
-        let id = task.id;
-        let waker = task::LocalWaker::new(id, handle);
+        let join = JoinHandle::new(task.id, Rc::clone(&task.state));
 
-        self.schedule_task(id);
-        self.tasks.insert(id, (task, waker));
+        self.register_task(handle, task);
 
         while !self.is_idle() {
             self.tick();
         }
 
-        // SAFETY: All tasks are guaranteed to be polled to completion before
-        // this function returns, which ensures that the task responsible for
-        // initializing `output` has finished.
-        unsafe { output.assume_init() }
+        join.take_output().expect("failed to join on blocked task")
     }
 
-    /// Schedules the task with the specified `id` to be polled.
+    /// Registers the provided task with the scheduler and schedules it for
+    /// polling.
     #[inline]
-    pub fn schedule_task(&mut self, id: task::Id) {
-        self.ready.push_back(id);
+    pub fn register_task(&self, handle: scheduler::Handle, task: task::Task) {
+        let id = task.id;
+        let waker = task::LocalWaker::new(task.id, handle);
+
+        self.register_task_with_waker(task, waker);
+        self.schedule_task(id);
     }
 
-    /// Returns `true` if the scheduler has no active tasks.
+    /// Schedules the task with the specified `Id` to be polled.
+    #[inline]
+    pub fn schedule_task(&self, id: task::Id) {
+        // SAFETY: `self.pending` is not mutably aliased when calling this
+        // method.
+        unsafe {
+            (*self.pending.get()).push_back(id);
+        }
+    }
+
+    #[inline]
+    fn register_task_with_waker(&self, task: task::Task, waker: task::LocalWaker) {
+        // SAFETY: `self.tasks` is not mutably aliased when calling this method.
+        unsafe {
+            (*self.tasks.get()).insert(task.id, (task, waker));
+        }
+    }
+
+    /// Returns `true` if there are no "active" tasks remaining within the
+    /// scheduler.
     #[inline]
     fn is_idle(&self) -> bool {
-        self.tasks.is_empty()
+        // SAFETY: `self.tasks` is not mutably aliased when calling this method.
+        // `is_empty` method also does not modify the state of `self.tasks`.
+        unsafe { (*self.tasks.get()).is_empty() }
     }
 
-    /// Polls all tasks currently in the ready queue.
-    fn tick(&mut self) {
-        while let Some(id) = self.ready.pop_front()
-            && let Some((task, waker)) = self.tasks.get_mut(&id)
-        {
-            let mut ctx = Context::from_waker(waker);
+    /// Polls all tasks currently in the pending queue.
+    fn tick(&self) {
+        // We need to Limit the scope of any mutable borrows of `self.pending`
+        // and `self.tasks` to avoid mutable aliasing, as polling a task may
+        // trigger child tasks to interact with the scheduler (e.g., schedule
+        // themselves) during each event loop "tick".
+        loop {
+            unsafe {
+                // SAFETY: `self.pending` is not mutably aliased when calling
+                // this method.
+                let Some(id) = (*self.pending.get()).pop_front() else {
+                    break;
+                };
 
-            if task.poll(&mut ctx).is_ready() {
-                self.tasks.remove(&id);
+                // SAFETY: `self.tasks` is not mutably aliased when calling this
+                // method.
+                let (mut task, waker) = (*self.tasks.get())
+                    .remove(&id)
+                    .expect("all pending task IDs should map to and active task entry");
+
+                let mut cx = Context::from_waker(&waker);
+
+                let prev_id = context::set_current_task_id(Some(id));
+
+                if task.poll(&mut cx).is_pending() || !task.is_complete() {
+                    self.register_task_with_waker(task, waker);
+                }
+
+                context::set_current_task_id(prev_id);
             }
         }
     }

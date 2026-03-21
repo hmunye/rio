@@ -1,12 +1,12 @@
-use crate::runtime::{EnterGuard, Handle};
+use crate::runtime::Handle;
 
 /// `rio` Runtime.
 ///
 /// Provides a single-threaded task scheduler for executing asynchronous
 /// [`tasks`].
 ///
-/// Enter a runtime context with [`Runtime::enter`], which uses a thread-local
-/// to track the current runtime. Allows tasks spawned within it's scope to be
+/// Enter a runtime context with [`Runtime::block_on`], which uses a thread-local
+/// to track the current runtime, allowing tasks spawned within its scope to be
 /// associated with the current context.
 ///
 /// [`tasks`]: crate::runtime::task
@@ -35,33 +35,6 @@ impl Runtime {
         }
     }
 
-    /// Enters the runtime context, allowing tasks spawned within this scope
-    /// to be associated with this runtime.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the current thread is within a runtime context.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rio::runtime::Runtime;
-    ///
-    /// let rt = Runtime::new();
-    ///
-    /// // Bind subsequent asynchronous tasks to this runtime context.
-    /// let _guard = rt.enter();
-    ///
-    /// // Will panic!
-    /// // let _guard2 = rt.enter();
-    ///
-    /// // `_guard` is dropped, exits the runtime context...
-    /// ```
-    #[inline]
-    pub fn enter(&self) -> EnterGuard {
-        self.handle.enter()
-    }
-
     /// Runs the provided future to completion on the `rio` runtime, serving as
     /// the runtime’s entry point.
     ///
@@ -72,7 +45,7 @@ impl Runtime {
     /// # Panics
     ///
     /// Panics if the provided future panics, or if the current thread is
-    /// within a runtime context.
+    /// already within a runtime context.
     ///
     /// # Examples
     ///
@@ -81,7 +54,6 @@ impl Runtime {
     ///
     /// let rt = Runtime::new();
     ///
-    /// // Execute the future, blocking the current thread until completion.
     /// let val = rt.block_on(async {
     ///     println!("hello, world");
     ///     4
