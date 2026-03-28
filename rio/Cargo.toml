@@ -1,0 +1,17 @@
+[package]
+name = "rio"
+version = "0.1.0"
+edition = "2024"
+authors = ["Huseen Munye"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/hmunye/rio"
+description = """
+Minimal Asynchronous Runtime for Rust.
+"""
+categories = ["asynchronous"]
+keywords = ["async", "non-blocking", "futures"]
+
+[dependencies]
+# rio-macros = { path = "../rio-macros", optional = true }
+rio-macros = { path = "../rio-macros" }

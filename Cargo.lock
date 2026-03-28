@@ -5,3 +5,10 @@ version = 4
 [[package]]
 name = "rio"
 version = "0.1.0"
+dependencies = [
+ "rio-macros",
+]
+
+[[package]]
+name = "rio-macros"
+version = "0.1.0"

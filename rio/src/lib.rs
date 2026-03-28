@@ -1,0 +1,14 @@
+//! Minimal Asynchronous Runtime for Rust.
+
+#![deny(clippy::unwrap_used)]
+#![warn(clippy::pedantic)]
+#![warn(clippy::nursery)]
+#![warn(rust_2018_idioms)]
+#![warn(missing_debug_implementations)]
+#![allow(clippy::use_self)]
+#![allow(clippy::redundant_else)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::struct_excessive_bools)]
+#![allow(clippy::option_if_let_else)]
