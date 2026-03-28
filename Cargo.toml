@@ -1,3 +1,3 @@
 [workspace]
 resolver = "3"
-members = ["rio", "rio-macros"]
+members = ["rio", "rio-macros", "examples"]

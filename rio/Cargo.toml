@@ -12,6 +12,12 @@ Minimal Asynchronous Runtime for Rust.
 categories = ["asynchronous"]
 keywords = ["async", "non-blocking", "futures"]
 
+[features]
+# Include nothing.
+default = []
+
+# Enable everything.
+full = ["rio-macros"]
+
 [dependencies]
-# rio-macros = { path = "../rio-macros", optional = true }
-rio-macros = { path = "../rio-macros" }
+rio-macros = { path = "../rio-macros", optional = true }

@@ -54,5 +54,9 @@
 #![allow(clippy::struct_excessive_bools)]
 #![allow(clippy::option_if_let_else)]
 
+#[cfg(feature = "rio-macros")]
+#[doc(inline)]
+pub use rio_macros::main;
+
 pub mod rt;
 pub mod task;

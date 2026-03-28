@@ -1,0 +1,13 @@
+[package]
+name = "examples"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "MIT"
+
+[dev-dependencies]
+rio = { version = "0.1.0", path = "../rio",  features = ["full"] }
+
+[[example]]
+name = "hello_world"
+path = "hello_world.rs"

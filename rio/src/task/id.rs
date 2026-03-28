@@ -44,12 +44,9 @@ impl fmt::Display for Id {
 ///     println!("task #{}", rio::task::id()); // task #0
 /// }
 ///
-/// fn main() {
-///     let rt = rio::rt::Runtime::new();
-///
-///     rt.block_on(async {
-///         foo().await;
-///     });
+/// #[rio::main]
+/// async fn main() {
+///     foo().await;
 /// }
 /// ```
 #[inline]
