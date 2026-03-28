@@ -31,11 +31,11 @@ impl Scheduler {
         }
     }
 
-    pub fn block_on_fut<F: Future + 'static>(&self, handle: Handle, fut: F) -> F::Output {
+    pub fn spawn_blocking<F: Future + 'static>(&self, handle: Handle, fut: F) -> F::Output {
         let mut output = std::mem::MaybeUninit::uninit();
         let output_ptr = &raw mut output;
 
-        let task = Task::new(fut, move |out| {
+        let task = Task::new_with(fut, move |out| {
             // SAFETY: `output_ptr` aliases a stack-allocated `MaybeUninit` that
             // remains valid for the duration of this function, since it blocks
             // until all tasks are resolved.
@@ -56,16 +56,20 @@ impl Scheduler {
         unsafe { output.assume_init() }
     }
 
-    pub fn register_task(&self, task: Task, handle: Handle) {
+    pub fn spawn(&self, task: Task, handle: Handle) {
+        self.register_task(task, handle);
+    }
+
+    pub fn schedule_task(&self, id: task::Id) {
+        self.ready.borrow_mut().push_back(id);
+    }
+
+    fn register_task(&self, task: Task, handle: Handle) {
         let id = task.id;
         let waker = LocalWaker::new(id, handle);
 
         self.register_task_with_waker(task, waker);
         self.schedule_task(id);
-    }
-
-    pub fn schedule_task(&self, id: task::Id) {
-        self.ready.borrow_mut().push_back(id);
     }
 
     fn register_task_with_waker(&self, task: Task, waker: LocalWaker) {

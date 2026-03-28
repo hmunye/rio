@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::rt::{Scheduler, context};
+use crate::rt::{Scheduler, Task, context};
 use crate::task;
 
 /// Internal shared handle to the runtime.
@@ -33,7 +33,11 @@ impl Handle {
 
     pub fn block_on<F: Future + 'static>(&self, fut: F) -> F::Output {
         let _guard = self.enter();
-        self.scheduler.block_on_fut(self.clone(), fut)
+        self.scheduler.spawn_blocking(self.clone(), fut)
+    }
+
+    pub fn spawn_task(&self, task: Task) {
+        self.scheduler.spawn(task, self.clone());
     }
 
     pub fn schedule_task(&self, id: task::Id) {

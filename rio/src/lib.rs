@@ -60,3 +60,5 @@ pub use rio_macros::main;
 
 pub mod rt;
 pub mod task;
+
+pub use task::spawn;

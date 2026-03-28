@@ -15,7 +15,7 @@ impl Task {
     /// Creates a new `Task`, using the provided closure to handle the output of
     /// `fut`.
     #[must_use]
-    pub fn new<Fut, F>(fut: Fut, f: F) -> Self
+    pub fn new_with<Fut, F>(fut: Fut, f: F) -> Self
     where
         Fut: Future + 'static,
         F: FnOnce(Fut::Output) + 'static,

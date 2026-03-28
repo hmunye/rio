@@ -20,6 +20,19 @@ thread_local! {
     }
 }
 
+/// Executes the provided closure using the runtime handle of the current
+/// thread.
+///
+/// # Panics
+///
+/// Panics if the current thread is not associated with a runtime handle.
+#[inline]
+pub fn with_current<R, F: FnOnce(&rt::Handle) -> R>(f: F) -> R {
+    CONTEXT
+        .with(|ctx| ctx.handle.borrow().as_ref().map(f))
+        .expect("no runtime context associated with the current thread")
+}
+
 /// Sets the provided runtime handle for the current thread.
 ///
 /// # Panics
