@@ -14,14 +14,14 @@ Minimal Asynchronous Runtime for Rust.
 Add `rio` to your project as a dependency:
 
 ```bash
-cargo add --git https://github.com/hmunye/rio.git rio
+cargo add --git https://github.com/hmunye/rio.git rio --features full
 ```
 
 Or in `Cargo.toml`:
 
 ```bash
 [dependencies]
-rio = { git = "https://github.com/hmunye/rio.git" }
+rio = { git = "https://github.com/hmunye/rio.git", version = "0.1.0", features = ["full"] }
 ```
 
 Examples using this crate can be found [here](https://github.com/hmunye/rio/tree/main/examples).
