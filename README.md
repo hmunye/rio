@@ -14,7 +14,7 @@ Minimal Asynchronous Runtime for Rust.
 Add `rio` to your project as a dependency:
 
 ```bash
-cargo add --git https://github.com/hmunye/rio.git
+cargo add --git https://github.com/hmunye/rio.git rio
 ```
 
 Or in `Cargo.toml`:
@@ -24,7 +24,7 @@ Or in `Cargo.toml`:
 rio = { git = "https://github.com/hmunye/rio.git" }
 ```
 
-Examples using this crate could be found [here](https://github.com/hmunye/rio/tree/main/examples).
+Examples using this crate can be found [here](https://github.com/hmunye/rio/tree/main/examples).
 
 ## License
 
