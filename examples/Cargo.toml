@@ -9,5 +9,5 @@ license = "MIT"
 rio = { version = "0.1.0", path = "../rio",  features = ["full"] }
 
 [[example]]
-name = "hello_world"
-path = "hello_world.rs"
+name = "counter"
+path = "counter.rs"
