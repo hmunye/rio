@@ -19,6 +19,7 @@ impl Id {
     }
 
     /// Consumes `self`, returning its numeric value.
+    #[inline]
     #[must_use]
     pub const fn val(self) -> u64 {
         self.0
@@ -52,5 +53,5 @@ impl fmt::Display for Id {
 #[inline]
 #[must_use]
 pub fn id() -> Id {
-    context::current_task().expect("no runtime context associated with the current thread")
+    context::task_id().expect("no runtime context associated with the current thread")
 }

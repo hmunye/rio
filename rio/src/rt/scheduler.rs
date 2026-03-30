@@ -2,13 +2,13 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::task::Context;
 
-use crate::rt::{Handle, Task, context, task::LocalWaker};
+use crate::rt::task::LocalWaker;
+use crate::rt::{Handle, Task, context};
 use crate::task;
 
 /// `rio` Scheduler.
 ///
-/// Single-threaded scheduler responsible for scheduling and polling tasks using \
-/// **cooperative multitasking**.
+/// Single-threaded scheduler responsible for scheduling and polling tasks.
 #[derive(Debug)]
 pub struct Scheduler {
     /// Stores all registered tasks, mapping each task [`Id`] to its [`Task`]
@@ -16,10 +16,14 @@ pub struct Scheduler {
     ///
     /// [`Id`]: task::Id
     tasks: RefCell<HashMap<task::Id, (Task, LocalWaker)>>,
-    /// Queue of task [`Id`]s ready to be polled.
+    /// Queue of task [`Id`]s ready to be polled on the _current_ tick.
     ///
     /// [`Id`]: task::Id
     ready: RefCell<VecDeque<task::Id>>,
+    /// Queue of task [`Id`]s to be polled on the _next_ tick.
+    ///
+    /// [`Id`]: task::Id
+    deferred: RefCell<VecDeque<task::Id>>,
 }
 
 impl Scheduler {
@@ -28,9 +32,13 @@ impl Scheduler {
         Scheduler {
             tasks: RefCell::default(),
             ready: RefCell::default(),
+            deferred: RefCell::default(),
         }
     }
 
+    /// Spawns an asynchronous task and blocks the current thread until the
+    /// provided future completes and the scheduler is fully idle (i.e., no
+    /// registered tasks remaining).
     pub fn spawn_blocking<F: Future + 'static>(&self, handle: Handle, fut: F) -> F::Output {
         let mut output = std::mem::MaybeUninit::uninit();
         let output_ptr = &raw mut output;
@@ -56,12 +64,21 @@ impl Scheduler {
         unsafe { output.assume_init() }
     }
 
+    /// Registers the provided asynchronous task for execution by the scheduler.
     pub fn spawn(&self, task: Task, handle: Handle) {
         self.register_task(task, handle);
     }
 
+    /// Schedules the task with the specified `Id` as ready for polling on the
+    /// _current_ tick.
     pub fn schedule_task(&self, id: task::Id) {
         self.ready.borrow_mut().push_back(id);
+    }
+
+    /// Schedules the task with the specified `Id` to be polled on the _next_
+    /// tick.
+    pub fn defer_task(&self, id: task::Id) {
+        self.deferred.borrow_mut().push_back(id);
     }
 
     fn register_task(&self, task: Task, handle: Handle) {
@@ -81,10 +98,15 @@ impl Scheduler {
     }
 
     fn tick(&self) {
-        // Limit the scope of any borrows of `self.ready` and `self.tasks`
-        // within a "tick" to avoid mutable aliasing, as polling a task may
-        // trigger child tasks to interact with the scheduler using their handle
-        // (e.g, schedule themselves).
+        context::with_handle(Handle::drive_timers);
+
+        self.ready
+            .borrow_mut()
+            .extend(self.deferred.borrow_mut().drain(..));
+
+        // Limit the scope of any borrows of `self` within a "tick" loop to
+        // avoid mutable aliasing, as polling a task may trigger child tasks to
+        // interact with the scheduler (e.g, schedule themselves).
         loop {
             let Some(id) = self.ready.borrow_mut().pop_front() else {
                 break;
@@ -96,13 +118,13 @@ impl Scheduler {
 
             let mut cx = Context::from_waker(&waker);
 
-            let prev_id = context::set_current_task(Some(id));
+            let prev_id = context::set_task_id(Some(id));
 
             if task.poll(&mut cx).is_pending() {
                 self.register_task_with_waker(task, waker);
             }
 
-            context::set_current_task(prev_id);
+            context::set_task_id(prev_id);
         }
     }
 }

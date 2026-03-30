@@ -17,7 +17,9 @@ keywords = ["async", "non-blocking", "futures"]
 default = []
 
 # Enable everything.
-full = ["rio-macros"]
+full = ["macros"]
+
+macros = ["rio-macros"]
 
 [dependencies]
 rio-macros = { path = "../rio-macros", optional = true }

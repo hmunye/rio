@@ -11,3 +11,7 @@ rio = { version = "0.1.0", path = "../rio",  features = ["full"] }
 [[example]]
 name = "counter"
 path = "counter.rs"
+
+[[example]]
+name = "timers"
+path = "timers.rs"

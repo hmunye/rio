@@ -1,11 +1,13 @@
-//! Asynchronous Tasks
+//! Asynchronous Tasks.
 //!
-//! A task is a lightweight, non‑blocking unit of execution (**green thread**)
-//! scheduled by the `rio` runtime. Tasks run cooperatively until they _yield_,
-//! after which the runtime can poll other ready tasks.
+//! Tasks are the fundamental units of non-blocking execution within the `rio`
+//! runtime. Often referred to as **green threads**, they operate cooperatively,
+//! yielding control back to the scheduler to allow other ready tasks to
+//! progress.
 //!
-//! Due to the scheduler being single‑threaded, a task should **not block** the
-//! current thread.
+//! Tasks must remain non-blocking. Avoid blocking the current thread during
+//! task execution. Instead, utilize the non-blocking asynchronous primitives
+//! provided by `rio` or opt-in to cooperative scheduling.
 
 mod id;
 pub use id::{Id, id};

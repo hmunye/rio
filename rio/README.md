@@ -14,7 +14,7 @@ Minimal Asynchronous Runtime for Rust.
 Add `rio` to your project as a dependency:
 
 ```bash
-cargo add --git https://github.com/hmunye/rio.git rio --features full
+cargo add --git https://github.com/hmunye/rio.git rio --features=full
 ```
 
 Or in `Cargo.toml`:

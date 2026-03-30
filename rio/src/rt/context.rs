@@ -27,7 +27,7 @@ thread_local! {
 ///
 /// Panics if the current thread is not associated with a runtime handle.
 #[inline]
-pub fn with_current<R, F: FnOnce(&rt::Handle) -> R>(f: F) -> R {
+pub fn with_handle<R, F: FnOnce(&rt::Handle) -> R>(f: F) -> R {
     CONTEXT
         .with(|ctx| ctx.handle.borrow().as_ref().map(f))
         .expect("no runtime context associated with the current thread")
@@ -39,7 +39,7 @@ pub fn with_current<R, F: FnOnce(&rt::Handle) -> R>(f: F) -> R {
 ///
 /// Panics if the current thread is already associated with a runtime handle.
 #[inline]
-pub fn set_current(handle: &rt::Handle) {
+pub fn set_handle(handle: &rt::Handle) {
     CONTEXT.with(|ctx| {
         assert!(
             ctx.handle.replace(Some(handle.clone())).is_none(),
@@ -50,19 +50,19 @@ pub fn set_current(handle: &rt::Handle) {
 
 /// Removes the runtime handle associated with the current thread.
 #[inline]
-pub fn drop_current() {
+pub fn drop_handle() {
     CONTEXT.with(|ctx| ctx.handle.take());
 }
 
 /// Returns the `Id` of the currently running task on the current thread.
 #[inline]
-pub fn current_task() -> Option<task::Id> {
+pub fn task_id() -> Option<task::Id> {
     CONTEXT.with(|ctx| ctx.task_id.get())
 }
 
 /// Sets the `Id` of the currently running task on the current thread, returning
 /// the previous `Id`.
 #[inline]
-pub fn set_current_task(id: Option<task::Id>) -> Option<task::Id> {
+pub fn set_task_id(id: Option<task::Id>) -> Option<task::Id> {
     CONTEXT.with(|ctx| ctx.task_id.replace(id))
 }

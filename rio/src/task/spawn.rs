@@ -1,4 +1,4 @@
-use crate::rt::{Task, context};
+use crate::rt::context;
 
 /// Spawns a new asynchronous task.
 ///
@@ -22,6 +22,7 @@ use crate::rt::{Task, context};
 ///     println!("hello from task #{}", rio::task::id()); // hello from task #0
 /// }
 /// ```
+#[inline]
 pub fn spawn<F: Future + 'static>(fut: F) {
-    context::with_current(|handle| handle.spawn_task(Task::new_with(fut, |_| {})));
+    context::with_handle(|handle| handle.spawn_task(fut));
 }

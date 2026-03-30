@@ -30,6 +30,7 @@ use crate::task;
 ///     rio::spawn(foo());
 /// }
 /// ```
+#[inline]
 pub async fn yield_now() {
     // Ensures we only `yield` once, to avoid deadlocks.
     let mut yielded = false;
@@ -41,9 +42,8 @@ pub async fn yield_now() {
 
         yielded = true;
 
-        // Schedule the current task before returning `Poll::Pending`, which
-        // triggers other ready tasks to be polled.
-        context::with_current(|handle| handle.schedule_task(task::id()));
+        // Current task will be deferred until the next "tick".
+        context::with_handle(|handle| handle.defer_task(task::id()));
 
         Poll::Pending
     })
