@@ -1,7 +1,7 @@
 //! `rio` Runtime.
 //!
-//! Provides a single-threaded task scheduler, necessary for running
-//! asynchronous [`tasks`].
+//! Provides a single-threaded task scheduler and time driver, necessary for
+//! running asynchronous [`tasks`].
 //!
 //! [`tasks`]: crate::task
 

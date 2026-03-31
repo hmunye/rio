@@ -8,7 +8,7 @@ thread_local! {
     static IDS: Cell<u64> = const { Cell::new(0) };
 }
 
-/// Opaque identifier for a task relative to all other currently running tasks.
+/// Opaque identifier for a task relative to all other tasks.
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Id(u64);
 
@@ -41,14 +41,14 @@ impl fmt::Display for Id {
 /// # Examples
 ///
 /// ```
+/// # #[rio::main]
+/// # async fn main() {
 /// async fn foo() {
 ///     println!("task #{}", rio::task::id()); // task #0
 /// }
 ///
-/// #[rio::main]
-/// async fn main() {
-///     foo().await;
-/// }
+/// foo().await;
+/// # }
 /// ```
 #[inline]
 #[must_use]

@@ -4,7 +4,7 @@ use std::task::{Context, Poll};
 
 use crate::task;
 
-/// Lightweight, non‑blocking unit of execution (**green thread**) scheduled by
+/// Lightweight, non‑blocking unit of execution (__green thread__) scheduled by
 /// the runtime.
 pub struct Task {
     pub id: task::Id,

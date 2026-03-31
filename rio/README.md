@@ -31,3 +31,7 @@ Examples using this crate can be found [here](https://github.com/hmunye/rio/tree
 This project is licensed under the [MIT License].
 
 [MIT License]: https://github.com/hmunye/rio/blob/main/LICENSE
+
+## References
+
+- [Tokio](https://github.com/tokio-rs/tokio)

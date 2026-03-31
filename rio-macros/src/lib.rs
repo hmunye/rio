@@ -4,7 +4,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{ItemFn, parse_macro_input};
 
-/// Marks an `async` function to be executed by the `rio` runtime.
+/// Marks "main" as an `async` function to be executed by the `rio` runtime.
 #[proc_macro_attribute]
 pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemFn);

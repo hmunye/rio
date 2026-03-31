@@ -8,23 +8,24 @@ use crate::rt::context;
 ///
 /// Equivalent to calling <code>[sleep_until](Instant::now() + duration)</code>.
 ///
-/// No work is performed while awaiting on the `Sleep` to complete. The returned
-/// `Sleep` is canceled by dropping it.
+/// No work is performed by the task while awaiting on the `Sleep` to complete.
+/// The returned `Sleep` is canceled by dropping it.
 ///
 /// # Panics
 ///
-/// Panics if the current thread is not within a runtime context.
+/// Panics if the caller `.await` or polls the returned future outside of a
+/// runtime context.
 ///
 /// # Examples
 ///
 /// ```
+/// # #[rio::main]
+/// # async fn main() {
 /// use std::time::Duration;
 ///
-/// #[rio::main]
-/// async fn main() {
-///     rio::time::sleep(Duration::from_millis(100)).await;
-///     println!("100ms have elapsed");
-/// }
+/// rio::time::sleep(Duration::from_millis(100)).await;
+/// println!("100ms have elapsed");
+/// # }
 /// ```
 #[inline]
 pub fn sleep(duration: Duration) -> Sleep {
@@ -46,23 +47,24 @@ pub fn sleep(duration: Duration) -> Sleep {
 
 /// Waits until `deadline` is reached.
 ///
-/// No work is performed while awaiting on the `Sleep` to complete. The returned
-/// `Sleep` is canceled by dropping it.
+/// No work is performed by the task while awaiting on the `Sleep` to complete.
+/// The returned `Sleep` is canceled by dropping it.
 ///
 /// # Panics
 ///
-/// Panics if the current thread is not within a runtime context.
+/// Panics if the caller `.await` or polls the returned future outside of a
+/// runtime context.
 ///
 /// # Examples
 ///
 /// ```
-/// use std::time::{Instant, Duration};
+/// # #[rio::main]
+/// # async fn main() {
+/// use std::time::{Duration, Instant};
 ///
-/// #[rio::main]
-/// async fn main() {
-///     rio::time::sleep_until(Instant::now() + Duration::from_millis(100)).await;
-///     println!("100ms have elapsed");
-/// }
+/// rio::time::sleep_until(Instant::now() + Duration::from_millis(100)).await;
+/// println!("100ms have elapsed");
+/// # }
 /// ```
 #[inline]
 pub const fn sleep_until(deadline: Instant) -> Sleep {
@@ -78,34 +80,34 @@ pub struct Sleep {
 }
 
 impl Sleep {
-    pub(crate) const fn new_timeout(deadline: Instant) -> Self {
+    const fn new_timeout(deadline: Instant) -> Self {
         Sleep {
             deadline,
             registered: false,
         }
     }
 
-    /// Returns the instant at which this `Sleep` will complete.
-    #[inline]
-    #[must_use]
-    pub const fn deadline(&self) -> Instant {
-        self.deadline
-    }
-
     /// Returns `true` if this `Sleep` has elapsed.
     ///
-    /// A `Sleep` is elapsed when the requested duration has elapsed.
+    /// A `Sleep` is elapsed when the requested duration/deadline has elapsed.
     #[inline]
     #[must_use]
     pub fn is_elapsed(&self) -> bool {
         Instant::now() >= self.deadline
+    }
+
+    /// Returns the instant at which this `Sleep` will elapse.
+    #[inline]
+    #[must_use]
+    pub const fn deadline(&self) -> Instant {
+        self.deadline
     }
 }
 
 impl Future for Sleep {
     type Output = ();
 
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         if self.is_elapsed() {
             return Poll::Ready(());
         }
@@ -114,7 +116,7 @@ impl Future for Sleep {
             self.registered = true;
 
             context::with_handle(|handle| {
-                handle.register_timer(self.deadline, ctx.waker().clone());
+                handle.register_timer(self.deadline, cx.waker().clone());
             });
         }
 

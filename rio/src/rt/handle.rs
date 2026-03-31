@@ -50,7 +50,8 @@ impl Handle {
     }
 
     pub fn defer_task(&self, id: task::Id) {
-        self.scheduler.defer_task(id);
+        self.scheduler
+            .defer_task(id, context::with_snapshot(context::Snapshot::used_since));
     }
 
     pub fn drive_timers(&self) {
