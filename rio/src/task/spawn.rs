@@ -1,6 +1,9 @@
 use crate::rt::context;
+use crate::task::JoinHandle;
 
-/// Spawns a new asynchronous task, allowing it to execute concurrently with
+/// Spawns a new asynchronous task, returning a [`JoinHandle`].
+///
+/// The task begins execution immediately, enabling it to run concurrently with
 /// other tasks.
 ///
 /// # Panics
@@ -9,15 +12,28 @@ use crate::rt::context;
 ///
 /// # Examples
 ///
-///
 /// ```
 /// # #[rio::main]
 /// # async fn main() {
-/// rio::spawn(async { 1 + 1 });
+/// use std::time::Duration;
+///
+/// let a = rio::spawn(async {
+///     rio::time::sleep(Duration::from_millis(100)).await;
+///     1 + 1
+/// });
+///
+/// let b = rio::spawn(async {
+///     rio::time::sleep(Duration::from_millis(200)).await;
+///     1 + 1
+/// });
+///
+/// assert_eq!(a.await + b.await, 4);
 /// # }
 /// ```
-// TODO: Update example when JoinHandle is implemented.
 #[inline]
-pub fn spawn<F: Future + 'static>(fut: F) {
-    context::with_handle(|handle| handle.spawn_task(fut));
+pub fn spawn<F: Future + 'static>(fut: F) -> JoinHandle<F::Output> {
+    JoinHandle {
+        state: context::with_handle(|handle| handle.spawn_task(fut)),
+        _marker: std::marker::PhantomData,
+    }
 }

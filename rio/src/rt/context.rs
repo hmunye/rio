@@ -4,7 +4,7 @@ use crate::rt;
 use crate::task::{self, coop::Budget};
 
 pub struct Snapshot {
-    last_budget: Budget,
+    budget: Budget,
 }
 
 impl Snapshot {
@@ -12,11 +12,16 @@ impl Snapshot {
     /// was last updated, or `0` if either the snapshot budget or the provided
     /// `budget` is _unconstrained_.
     pub fn used_since(&self) -> u8 {
-        with_budget(|b| {
-            match (self.last_budget.val(), b.get().val()) {
-                (Some(snap), Some(curr)) => snap.saturating_sub(curr),
-                _ => 0, // unconstrained: nothing _used_.
+        with_budget(|b| match (self.budget.val(), b.get().val()) {
+            (Some(snap), Some(curr)) => {
+                debug_assert!(
+                    snap >= curr,
+                    "consumed more budget than what was available (snapshot = {snap}, current = {curr})"
+                );
+
+                snap - curr
             }
+            _ => 0,
         })
     }
 }
@@ -28,10 +33,10 @@ struct Context {
     ///
     /// [`Id`]: task::Id
     task_id: Cell<Option<task::Id>>,
-    /// Tracks the remaining execution budget for the current "tick", before
-    /// tasks need to yield control to the runtime.
+    /// Tracks the remaining execution budget for the current "tick" on the
+    /// current thread, before tasks need to yield control to the runtime.
     budget: Cell<Budget>,
-    /// Per-task snapshot of execution context on the current thread.
+    /// Per-task execution context snapshot for the current thread.
     snapshot: RefCell<Snapshot>,
 }
 
@@ -42,7 +47,7 @@ thread_local! {
             task_id: Cell::new(None),
             budget: Cell::new(Budget::unconstrained()),
             snapshot: RefCell::new(Snapshot {
-                last_budget: Budget::unconstrained()
+                budget: Budget::unconstrained()
             })
         }
     }
@@ -58,7 +63,7 @@ thread_local! {
 pub fn with_handle<R, F: FnOnce(&rt::Handle) -> R>(f: F) -> R {
     CONTEXT
         .with(|cx| cx.handle.borrow().as_ref().map(f))
-        .expect("no runtime context associated with the current thread")
+        .expect("no runtime context associated with the current thread; use `Runtime::block_on` to enter one")
 }
 
 /// Sets the provided runtime handle for the current thread.
@@ -71,7 +76,7 @@ pub fn set_handle(handle: &rt::Handle) {
     CONTEXT.with(|cx| {
         assert!(
             cx.handle.replace(Some(handle.clone())).is_none(),
-            "runtime context already associated with the current thread"
+            "cannot enter runtime: a runtime context is already active on this thread"
         );
     });
 }
@@ -107,7 +112,8 @@ pub fn set_budget(budget: Budget) -> Budget {
     CONTEXT.with(|cx| cx.budget.replace(budget))
 }
 
-/// Executes the provided closure using the `Snapshot` of the current thread.
+/// Executes the provided closure using the current `Snapshot` of the current
+/// thread.
 #[inline]
 pub fn with_snapshot<R, F: FnOnce(&Snapshot) -> R>(f: F) -> R {
     CONTEXT.with(|cx| f(&cx.snapshot.borrow()))
@@ -117,6 +123,6 @@ pub fn with_snapshot<R, F: FnOnce(&Snapshot) -> R>(f: F) -> R {
 #[inline]
 pub fn update_snapshot() {
     CONTEXT.with(|cx| {
-        cx.snapshot.borrow_mut().last_budget = cx.budget.get();
+        cx.snapshot.borrow_mut().budget = cx.budget.get();
     });
 }

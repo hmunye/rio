@@ -17,8 +17,9 @@ keywords = ["async", "non-blocking", "futures"]
 default = []
 
 # Enable everything.
-full = ["macros"]
+full = ["time", "macros"]
 
+time = []
 macros = ["rio-macros"]
 
 [dependencies]

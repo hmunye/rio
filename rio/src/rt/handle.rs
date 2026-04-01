@@ -1,15 +1,13 @@
 use std::rc::Rc;
-use std::task::Waker;
-use std::time::Instant;
 
-use crate::rt::{Scheduler, Task, context, time};
+use crate::rt::task::{TaskStage, TaskState};
+use crate::rt::{Scheduler, Task, context};
 use crate::task;
 
-/// Internal shared handle to the runtime.
-#[derive(Debug, Clone)]
-pub struct Handle {
-    scheduler: Rc<Scheduler>,
-    time: Rc<time::Driver>,
+cfg_time! {
+    use crate::rt::time;
+    use std::task::Waker;
+    use std::time::Instant;
 }
 
 /// Runtime context guard.
@@ -26,23 +24,53 @@ impl Drop for EnterGuard {
     }
 }
 
+/// Internal shared handle to the runtime.
+#[derive(Debug, Clone)]
+pub struct Handle {
+    scheduler: Rc<Scheduler>,
+    #[cfg(feature = "time")]
+    time: Rc<time::Driver>,
+}
+
 impl Handle {
     #[must_use]
     pub fn new() -> Self {
         Handle {
             scheduler: Rc::new(Scheduler::new()),
+            #[cfg(feature = "time")]
             time: Rc::new(time::Driver::new()),
         }
     }
 
     pub fn block_on<F: Future + 'static>(&self, fut: F) -> F::Output {
         let _guard = self.enter();
-        self.scheduler.spawn_blocking(self.clone(), fut)
+        self.scheduler.spawn_blocking(fut, self.clone())
     }
 
-    pub fn spawn_task<F: Future + 'static>(&self, fut: F) {
-        self.scheduler
-            .spawn(Task::new_with(fut, |_| {}), self.clone());
+    pub fn spawn_task<F: Future + 'static>(&self, fut: F) -> Rc<TaskState> {
+        let task = Task::new_with(fut, |out, weak| {
+            if let Some(state) = weak.upgrade() {
+                if state.is_detached() {
+                    // No handle exists; mark as consumed and drop output.
+                    state.set_stage(TaskStage::Consumed);
+                } else {
+                    // Handle exists; retain the output.
+                    state.set_stage(TaskStage::Finished(Box::new(out)));
+                }
+
+                if let Some(waker) = state.waker.take() {
+                    waker.wake();
+                }
+            }
+        });
+
+        // NOTE: Return an `Rc` (not `Weak`) so the task’s output remains
+        // accessible even if the task is dropped (e.g., in `spawn_blocking`).
+        let state = Rc::clone(&task.state);
+
+        self.scheduler.spawn(task, self.clone());
+
+        state
     }
 
     pub fn schedule_task(&self, id: task::Id) {
@@ -54,16 +82,20 @@ impl Handle {
             .defer_task(id, context::with_snapshot(context::Snapshot::used_since));
     }
 
-    pub fn drive_timers(&self) {
-        self.time.drive();
-    }
-
-    pub fn register_timer(&self, deadline: Instant, waker: Waker) {
-        self.time.register_timer(deadline, waker);
-    }
-
     fn enter(&self) -> EnterGuard {
         context::set_handle(self);
         EnterGuard {}
+    }
+}
+
+cfg_time! {
+    impl Handle {
+        pub fn drive_timers(&self) {
+            self.time.drive();
+        }
+
+        pub fn register_timer(&self, deadline: Instant, waker: Waker) {
+            self.time.register_timer(deadline, waker);
+        }
     }
 }

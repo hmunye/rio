@@ -27,7 +27,7 @@ use crate::task;
 /// ```
 #[inline]
 pub async fn yield_now() {
-    // Only return `Poll::Pending` once to avoid stalling the runtime.
+    // Only returns `Poll::Pending` once to avoid stalling the runtime.
     let mut yielded = false;
 
     future::poll_fn(|_| {

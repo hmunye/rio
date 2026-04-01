@@ -17,6 +17,7 @@ struct CooperativeProj<'p, F: Future> {
 }
 
 impl<F: Future> Cooperative<F> {
+    #[must_use]
     const fn project(self: Pin<&mut Self>) -> CooperativeProj<'_, F> {
         // SAFETY: `self` is a pinned mutable reference to `Cooperative<F>`,
         // making it safe to pin the `fut` field, since `Pin<T>` guarantees that
@@ -71,7 +72,7 @@ impl<F: Future> fmt::Debug for Cooperative<F> {
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
 /// use rio::task;

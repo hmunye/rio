@@ -20,3 +20,6 @@ pub use spawn::spawn;
 
 mod yield_now;
 pub use yield_now::yield_now;
+
+mod join;
+pub use join::JoinHandle;

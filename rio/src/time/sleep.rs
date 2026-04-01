@@ -32,11 +32,6 @@ pub fn sleep(duration: Duration) -> Sleep {
     let deadline = match Instant::now().checked_add(duration) {
         Some(deadline) => deadline,
         None => {
-            // Roughly 30 years from now. `std::time::Instant` does not provide
-            // a way to obtain `Instant::MAX` or convert specific date in the
-            // future to an Instant. 1000 years overflows on macOS, 100 years
-            // overflows on FreeBSD.
-            //
             // <https://docs.rs/tokio/latest/src/tokio/time/instant.rs.html#34-36>
             Instant::now() + Duration::from_secs(86400 * 365 * 30)
         }

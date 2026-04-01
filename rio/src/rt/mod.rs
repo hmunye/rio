@@ -16,7 +16,9 @@ pub(crate) mod context;
 mod scheduler;
 pub(crate) use scheduler::Scheduler;
 
-mod task;
+pub(crate) mod task;
 pub(crate) use task::Task;
 
-mod time;
+cfg_time! {
+    mod time;
+}

@@ -44,7 +44,7 @@ impl fmt::Display for Id {
 /// # #[rio::main]
 /// # async fn main() {
 /// async fn foo() {
-///     println!("task #{}", rio::task::id()); // task #0
+///     println!("task #{}", rio::task::id());
 /// }
 ///
 /// foo().await;
@@ -53,5 +53,6 @@ impl fmt::Display for Id {
 #[inline]
 #[must_use]
 pub fn id() -> Id {
-    context::task_id().expect("no runtime context associated with the current thread")
+    context::task_id()
+        .expect("no runtime context associated with the current thread; use `Runtime::block_on` to enter one")
 }

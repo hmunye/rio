@@ -16,8 +16,10 @@ pub fn has_budget_remaining() -> bool {
 pub struct Budget(Option<u8>);
 
 impl Budget {
-    /// <https://docs.rs/tokio/latest/src/tokio/task/coop/mod.rs.html#116>
-    pub const INITIAL: u8 = 128;
+    // One less than `tokio`'s initial value to fit within a `u128` bitmap.
+    //
+    // <https://docs.rs/tokio/latest/src/tokio/task/coop/mod.rs.html#116>
+    pub const INITIAL: u8 = 127;
 
     #[must_use]
     pub const fn initial() -> Self {

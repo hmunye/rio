@@ -1,6 +1,6 @@
 //! Cooperative Scheduling Utilities.
 //!
-//! ## Why Cooperation Matters
+//! ### Why Cooperation Matters
 //!
 //! `rio` relies on cooperative scheduling to manage multiple tasks on a single
 //! thread. Unlike OS threads, the runtime cannot forcibly interrupt a running
@@ -9,7 +9,7 @@
 //! progress. This leads to __starvation__ of ready tasks and delays in
 //! time-bound resources (i.e., timers).
 //!
-//! ## Cooperative Scheduling
+//! ### Cooperative Scheduling
 //!
 //! Long-running CPU-intensive workloads can stall the entire runtime.
 //!
@@ -53,6 +53,7 @@
 
 mod budget;
 pub use budget::has_budget_remaining;
+
 pub(crate) use budget::{Budget, with_initial, with_unconstrained};
 
 mod proceed;

@@ -54,12 +54,19 @@
 #![allow(clippy::struct_excessive_bools)]
 #![allow(clippy::option_if_let_else)]
 
-#[cfg(feature = "macros")]
-#[doc(inline)]
-pub use rio_macros::main;
+// Must be defined first.
+#[macro_use]
+pub(crate) mod macros;
 
 pub mod rt;
 pub mod task;
-pub mod time;
 
 pub use task::spawn;
+
+cfg_macros! {
+    pub use rio_macros::main;
+}
+
+cfg_time! {
+    pub mod time;
+}

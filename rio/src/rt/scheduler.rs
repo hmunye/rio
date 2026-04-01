@@ -1,31 +1,74 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
+use std::rc::Rc;
 use std::task::Context;
 
-use crate::rt::task::LocalWaker;
+use crate::rt::task::{LocalWaker, TaskStage};
 use crate::rt::{Handle, Task, context};
-use crate::task;
-use crate::task::coop::{self, Budget};
+use crate::task::JoinHandle;
+use crate::task::{
+    self,
+    coop::{self, Budget},
+};
+
+#[derive(Debug)]
+struct Deferred {
+    /// Each slot corresponds to the amount of execution budget used by that
+    /// task during the previous "tick" (`0..=Budget::INITIAL`).
+    buckets: [Vec<task::Id>; (Budget::INITIAL + 1) as usize],
+    /// Tracks non-empty buckets for efficient lookup.
+    ///
+    /// NOTE: `Budget::INITIAL` must be <= 127.
+    bitmap: u128,
+}
+
+impl Deferred {
+    fn insert(&mut self, idx: usize, id: task::Id) {
+        self.buckets[idx].push(id);
+        // Mark bucket as non-empty.
+        self.bitmap |= 1 << idx;
+    }
+
+    fn next_bucket(&mut self) -> Option<std::vec::Drain<'_, task::Id>> {
+        if self.is_empty() {
+            return None;
+        }
+
+        // Next non-empty bucket, from least to most execution budget used last
+        // "tick".
+        let next_bucket = self.bitmap.trailing_zeros() as usize;
+        let bucket = &mut self.buckets[next_bucket];
+
+        // Mark bucket as empty since it will be drained.
+        self.bitmap &= !(1 << next_bucket);
+
+        Some(bucket.drain(..))
+    }
+
+    const fn is_empty(&self) -> bool {
+        self.bitmap == 0
+    }
+}
 
 /// `rio` Scheduler.
 ///
 /// Single-threaded scheduler responsible for scheduling and polling tasks.
 #[derive(Debug)]
 pub struct Scheduler {
-    /// Stores all registered tasks, mapping each task [`Id`] to its [`Task`]
-    /// and [`LocalWaker`].
+    /// Stores all registered tasks, mapping each [`Id`] to its [`Task`] and
+    /// [`LocalWaker`].
     ///
     /// [`Id`]: task::Id
     tasks: RefCell<HashMap<task::Id, (Task, LocalWaker)>>,
-    /// Queue of task [`Id`]s ready to be polled on the _current_ "tick".
+    /// Queue of task [`Id`]s ready to be polled, potentially on the _current_
+    /// "tick".
     ///
     /// [`Id`]: task::Id
     ready: RefCell<VecDeque<task::Id>>,
-    /// Task [`Id`]s to be polled on the _next_ "tick". Each slot corresponds to
-    /// the amount of execution budget used by that task during the last "tick".
+    /// Task [`Id`]s to be polled on the _next_ "tick".
     ///
     /// [`Id`]: task::Id
-    deferred: RefCell<[Vec<task::Id>; (Budget::INITIAL + 1) as usize]>,
+    deferred: RefCell<Deferred>,
 }
 
 impl Scheduler {
@@ -34,25 +77,30 @@ impl Scheduler {
         Scheduler {
             tasks: RefCell::default(),
             ready: RefCell::default(),
-            deferred: RefCell::new(std::array::from_fn(|_| Vec::new())),
+            deferred: RefCell::new(Deferred {
+                buckets: std::array::from_fn(|_| Vec::new()),
+                bitmap: 0,
+            }),
         }
     }
 
     /// Spawns an asynchronous task, blocking the current thread until the
     /// provided future completes and the scheduler is fully idle (i.e., no
     /// registered tasks remaining).
-    pub fn spawn_blocking<F: Future + 'static>(&self, handle: Handle, fut: F) -> F::Output {
-        let mut output = std::mem::MaybeUninit::uninit();
-        let output_ptr = &raw mut output;
-
-        let task = Task::new_with(fut, move |out| {
-            // SAFETY: `output_ptr` aliases a stack-allocated `MaybeUninit` that
-            // remains valid for the duration of this function, since it does
-            // not return until all tasks are resolved.
-            unsafe {
-                (*output_ptr).write(out);
+    pub fn spawn_blocking<F: Future + 'static>(&self, fut: F, handle: Handle) -> F::Output {
+        let task = Task::new_with(fut, |out, weak| {
+            if let Some(state) = weak.upgrade() {
+                // We know the handle exists; retain the output.
+                state.set_stage(TaskStage::Finished(Box::new(out)));
             }
         });
+
+        let join = JoinHandle {
+            // NOTE: Use an `Rc` (not `Weak`) so the task’s output remains
+            // accessible even if the task is dropped.
+            state: Rc::clone(&task.state),
+            _marker: std::marker::PhantomData,
+        };
 
         self.spawn(task, handle);
 
@@ -60,10 +108,7 @@ impl Scheduler {
             self.tick();
         }
 
-        // SAFETY: This function does not return until the scheduler is idle,
-        // which guarantees that all spawned tasks, including the one polling
-        // `fut`, have resolved, meaning `output` was initialized.
-        unsafe { output.assume_init() }
+        join.take_output()
     }
 
     /// Registers the provided asynchronous task for execution by the scheduler.
@@ -71,62 +116,63 @@ impl Scheduler {
         self.register_task(task, handle);
     }
 
-    /// Schedules the task with the specified `Id` as ready for polling on the
-    /// _current_ "tick".
+    /// Schedules the task with the specified `Id` as ready for polling,
+    /// potentially on the _current_ "tick".
     pub fn schedule_task(&self, id: task::Id) {
         self.ready.borrow_mut().push_back(id);
     }
 
     /// Schedules the task with the specified `Id` to be polled on the _next_
     /// "tick", weighted by how much of the execution budget it used during the
-    /// previous "tick".
+    /// current "tick".
     pub fn defer_task(&self, id: task::Id, used_budget: u8) {
-        self.deferred.borrow_mut()[used_budget as usize].push(id);
+        self.deferred.borrow_mut().insert(used_budget as usize, id);
     }
 
     fn register_task(&self, task: Task, handle: Handle) {
-        let id = task.id;
+        let id = task.state.id;
         let waker = LocalWaker::new(id, handle);
 
-        self.register_task_with_waker(task, waker);
+        self.register_task_with_waker(id, task, waker);
         self.schedule_task(id);
     }
 
-    fn register_task_with_waker(&self, task: Task, waker: LocalWaker) {
-        self.tasks.borrow_mut().insert(task.id, (task, waker));
+    fn register_task_with_waker(&self, id: task::Id, task: Task, waker: LocalWaker) {
+        self.tasks.borrow_mut().insert(id, (task, waker));
     }
 
     fn is_idle(&self) -> bool {
         self.tasks.borrow().is_empty()
     }
 
-    fn run_task(&self, mut task: Task, waker: LocalWaker) {
+    fn run_task(&self, id: task::Id, mut task: Task, waker: LocalWaker) {
         let mut cx = Context::from_waker(&waker);
 
-        let prev_id = context::set_task_id(Some(task.id));
+        let prev_id = context::set_task_id(Some(id));
         context::update_snapshot();
 
-        if task.poll(&mut cx).is_pending() {
-            self.register_task_with_waker(task, waker);
+        if task.is_pollable() && task.poll(&mut cx).is_pending() {
+            self.register_task_with_waker(id, task, waker);
         }
 
         context::set_task_id(prev_id);
     }
 
     fn tick(&self) {
-        context::with_handle(Handle::drive_timers);
+        // TODO: Use`std::thread::park_timeout` if there are no ready/deferred
+        // tasks and just active timers.
+        #[cfg(feature = "time")]
+        {
+            context::with_handle(Handle::drive_timers);
+        }
 
         // Queue deferred tasks in the order of execution budget used during
-        // the previous "tick" (ascending order).
-        self.ready.borrow_mut().extend(
-            self.deferred
-                .borrow_mut()
-                .iter_mut()
-                .flat_map(|q| q.drain(..)),
-        );
+        // the previous "tick" (ascending).
+        while let Some(ids) = self.deferred.borrow_mut().next_bucket() {
+            self.ready.borrow_mut().extend(ids);
+        }
 
-        // Start each "tick" with an initial budget, shared between all ready
-        // tasks.
+        // Start each "tick" with an initial budget, shared between all tasks.
         coop::with_initial(|| {
             // Limit the scope of any borrows of `self` within a "tick" loop to
             // avoid mutable aliasing, as polling a task may trigger child tasks
@@ -140,7 +186,7 @@ impl Scheduler {
                     panic!("task entry should not be missing for task #{id}");
                 };
 
-                self.run_task(task, waker);
+                self.run_task(id, task, waker);
 
                 if !coop::has_budget_remaining() {
                     break;

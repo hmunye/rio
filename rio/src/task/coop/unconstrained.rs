@@ -17,6 +17,7 @@ struct UnconstrainedProj<'p, F: Future> {
 }
 
 impl<F: Future> Unconstrained<F> {
+    #[must_use]
     const fn project(self: Pin<&mut Self>) -> UnconstrainedProj<'_, F> {
         // SAFETY: `self` is a pinned mutable reference to `Unconstrained<F>`,
         // making it safe to pin the `fut` field, since `Pin<T>` guarantees that
@@ -59,7 +60,7 @@ impl<F: Future> fmt::Debug for Unconstrained<F> {
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
 /// use std::future;
