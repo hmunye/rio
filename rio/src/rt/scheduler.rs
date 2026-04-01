@@ -109,6 +109,7 @@ impl Scheduler {
         }
 
         join.take_output()
+            .expect("`block_on` task missing output: task should have completed")
     }
 
     /// Registers the provided asynchronous task for execution by the scheduler.
@@ -183,7 +184,7 @@ impl Scheduler {
                 };
 
                 let Some((task, waker)) = self.tasks.borrow_mut().remove(&id) else {
-                    panic!("task entry should not be missing for task #{id}");
+                    continue;
                 };
 
                 self.run_task(id, task, waker);

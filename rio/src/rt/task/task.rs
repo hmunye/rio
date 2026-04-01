@@ -21,6 +21,8 @@ pub enum TaskStage {
     Finished(Box<dyn Any>),
     /// Task's output has been taken by a `JoinHandle`; cannot be polled again.
     Consumed,
+    /// Task was canceled before completing; cannot be polled again.
+    Canceled,
 }
 
 /// Internal runtime state of a `Task`.

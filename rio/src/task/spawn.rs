@@ -27,7 +27,7 @@ use crate::task::JoinHandle;
 ///     1 + 1
 /// });
 ///
-/// assert_eq!(a.await + b.await, 4);
+/// assert_eq!(a.await.unwrap() + b.await.unwrap(), 4);
 /// # }
 /// ```
 #[inline]
