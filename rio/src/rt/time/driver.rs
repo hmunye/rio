@@ -70,6 +70,6 @@ impl Driver {
             }
         }
 
-        return timeout;
+        timeout
     }
 }

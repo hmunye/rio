@@ -44,7 +44,8 @@ impl Handle {
 
     pub fn block_on<F: Future + 'static>(&self, fut: F) -> F::Output {
         let _guard = self.enter();
-        self.scheduler.spawn_blocking(fut, self.clone())
+        self.scheduler
+            .spawn_blocking(fut, Rc::downgrade(&self.scheduler))
     }
 
     pub fn spawn_task<F: Future + 'static>(&self, fut: F) -> Rc<TaskState> {
@@ -76,13 +77,9 @@ impl Handle {
         // accessible even when the task is dropped (e.g., in `spawn_blocking`).
         let state = Rc::clone(&task.state);
 
-        self.scheduler.spawn(task, self.clone());
+        self.scheduler.spawn(task, Rc::downgrade(&self.scheduler));
 
         state
-    }
-
-    pub fn schedule_task(&self, id: task::Id) {
-        self.scheduler.schedule_task(id);
     }
 
     pub fn defer_task(&self, id: task::Id) {

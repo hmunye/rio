@@ -1,10 +1,10 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::task::Context;
 
 use crate::rt::task::{LocalWaker, TaskStage};
-use crate::rt::{Handle, Task, context};
+use crate::rt::{Task, context};
 use crate::task::JoinHandle;
 use crate::task::{
     self,
@@ -14,6 +14,8 @@ use crate::task::{
 cfg_time! {
     use std::time::Duration;
     use std::thread;
+
+    use crate::rt::Handle;
 }
 
 #[derive(Debug)]
@@ -92,7 +94,11 @@ impl Scheduler {
     /// Spawns an asynchronous task, blocking the current thread until the
     /// provided future completes and the scheduler is fully idle (i.e., no
     /// registered tasks remaining).
-    pub fn spawn_blocking<F: Future + 'static>(&self, fut: F, handle: Handle) -> F::Output {
+    pub fn spawn_blocking<F: Future + 'static>(
+        &self,
+        fut: F,
+        handle: Weak<Scheduler>,
+    ) -> F::Output {
         let task = Task::new_with(fut, |out, weak| {
             if let Some(state) = weak.upgrade() {
                 // We know the handle exists; retain the output.
@@ -118,7 +124,7 @@ impl Scheduler {
     }
 
     /// Registers the provided asynchronous task for execution by the scheduler.
-    pub fn spawn(&self, task: Task, handle: Handle) {
+    pub fn spawn(&self, task: Task, handle: Weak<Scheduler>) {
         self.register_task(task, handle);
     }
 
@@ -135,7 +141,7 @@ impl Scheduler {
         self.deferred.borrow_mut().insert(used_budget as usize, id);
     }
 
-    fn register_task(&self, task: Task, handle: Handle) {
+    fn register_task(&self, task: Task, handle: Weak<Scheduler>) {
         let id = task.state.id;
         let waker = LocalWaker::new(id, handle);
 

@@ -191,7 +191,7 @@ impl Interval {
         }
     }
 
-    fn new_at(start: Instant, period: Duration) -> Self {
+    const fn new_at(start: Instant, period: Duration) -> Self {
         Interval {
             delay: time::sleep_until(start),
             period,

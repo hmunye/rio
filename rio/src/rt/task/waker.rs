@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::task::{RawWaker, RawWakerVTable, Waker};
 
-use crate::rt::Handle;
+use crate::rt::Scheduler;
 use crate::task;
 
 /// `LocalWaker` is analogous to a [`Waker`], but does not implement [`Send`] or
@@ -18,13 +18,13 @@ pub struct LocalWaker {
 #[derive(Debug)]
 struct WakerData {
     task_id: task::Id,
-    handle: Handle,
+    handle: Weak<Scheduler>,
 }
 
 impl LocalWaker {
     const WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref, drop);
 
-    pub fn new(task_id: task::Id, handle: Handle) -> Self {
+    pub fn new(task_id: task::Id, handle: Weak<Scheduler>) -> Self {
         let waker_data = WakerData { task_id, handle };
 
         LocalWaker {
@@ -69,7 +69,9 @@ unsafe fn wake(ptr: *const ()) {
     // SAFETY: `ptr` was created from a call to `Rc::into_raw`.
     let data: Rc<WakerData> = unsafe { Rc::from_raw(ptr.cast::<WakerData>()) };
 
-    data.handle.schedule_task(data.task_id);
+    if let Some(handle) = data.handle.upgrade() {
+        handle.schedule_task(data.task_id);
+    }
 
     // `data` is dropped here, decrementing the reference count.
 }
@@ -79,7 +81,9 @@ unsafe fn wake_by_ref(ptr: *const ()) {
     // SAFETY: `ptr` was created from a call to `Rc::into_raw`.
     let data: Rc<WakerData> = unsafe { Rc::from_raw(ptr.cast::<WakerData>()) };
 
-    data.handle.schedule_task(data.task_id);
+    if let Some(handle) = data.handle.upgrade() {
+        handle.schedule_task(data.task_id);
+    }
 
     // Prevent decrementing the reference count.
     std::mem::forget(data);
