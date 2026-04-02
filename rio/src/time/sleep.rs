@@ -97,6 +97,11 @@ impl Sleep {
     pub const fn deadline(&self) -> Instant {
         self.deadline
     }
+
+    pub(crate) const fn reset(&mut self, deadline: Instant) {
+        self.deadline = deadline;
+        self.registered = false;
+    }
 }
 
 impl Future for Sleep {
