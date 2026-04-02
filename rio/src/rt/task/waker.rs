@@ -8,7 +8,7 @@ use crate::task;
 /// `LocalWaker` is analogous to a [`Waker`], but does not implement [`Send`] or
 /// [`Sync`].
 ///
-// <https://github.com/rust-lang/rust/issues/118959>
+// NOTE: <https://github.com/rust-lang/rust/issues/118959>
 #[derive(Debug)]
 pub struct LocalWaker {
     waker: Waker,
@@ -28,8 +28,11 @@ impl LocalWaker {
         let waker_data = WakerData { task_id, handle };
 
         LocalWaker {
-            // SAFETY: `LocalWaker` does not implement `Send + Sync`: `RawWaker`
-            // data can be `!Send + !Sync`.
+            // SAFETY: All `Wakers` for tasks are constructed from `LocalWaker`,
+            // which is `!Send` + `!Sync`, so it's safe for the underlying
+            // `RawWaker` data and vtable functions to be !Send + !Sync. After
+            // construction, the `Waker` is only accessed from the current
+            // thread.
             waker: unsafe { Waker::from_raw(Self::new_raw_waker(Rc::new(waker_data))) },
             _marker: PhantomData,
         }

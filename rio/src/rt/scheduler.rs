@@ -34,8 +34,8 @@ impl Deferred {
             return None;
         }
 
-        // Next non-empty bucket, from least to most execution budget used last
-        // "tick".
+        // Next non-empty bucket, from least to most execution budget used in
+        // the previous "tick".
         let next_bucket = self.bitmap.trailing_zeros() as usize;
         let bucket = &mut self.buckets[next_bucket];
 
@@ -97,7 +97,7 @@ impl Scheduler {
 
         let join = JoinHandle {
             // NOTE: Use an `Rc` (not `Weak`) so the task’s output remains
-            // accessible even if the task is dropped.
+            // accessible even when the task is dropped.
             state: Rc::clone(&task.state),
             _marker: std::marker::PhantomData,
         };
@@ -149,14 +149,11 @@ impl Scheduler {
     fn run_task(&self, id: task::Id, mut task: Task, waker: LocalWaker) {
         let mut cx = Context::from_waker(&waker);
 
-        let prev_id = context::set_task_id(Some(id));
         context::update_snapshot();
 
         if task.is_pollable() && task.poll(&mut cx).is_pending() {
             self.register_task_with_waker(id, task, waker);
         }
-
-        context::set_task_id(prev_id);
     }
 
     fn tick(&self) {
@@ -175,9 +172,9 @@ impl Scheduler {
 
         // Start each "tick" with an initial budget, shared between all tasks.
         coop::with_initial(|| {
-            // Limit the scope of any borrows of `self` within a "tick" loop to
-            // avoid mutable aliasing, as polling a task may trigger child tasks
-            // to interact with the scheduler (e.g, schedule themselves).
+            // Limit the scope of any borrows of `self` within the loop to avoid
+            // mutable aliasing, as polling a task may trigger child tasks to
+            // interact with the scheduler (e.g, schedule themselves).
             loop {
                 let Some(id) = self.ready.borrow_mut().pop_front() else {
                     break;

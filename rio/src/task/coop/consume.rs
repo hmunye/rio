@@ -27,8 +27,8 @@ use crate::task::coop;
 /// ```
 #[inline]
 pub async fn consume_budget() {
-    // Only returns `Poll::Pending` until the current task can proceed to avoid
-    // stalling the runtime.
+    // Ensures we only return `Poll::Pending` until the current task can
+    // proceed, to avoid stalling the runtime.
     let mut status = Poll::Pending;
 
     future::poll_fn(|_| {

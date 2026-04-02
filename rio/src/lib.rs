@@ -54,7 +54,7 @@
 #![allow(clippy::struct_excessive_bools)]
 #![allow(clippy::option_if_let_else)]
 
-// Must be defined first.
+// NOTE: Must be defined first!
 #[macro_use]
 pub(crate) mod macros;
 

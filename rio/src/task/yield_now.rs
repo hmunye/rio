@@ -27,7 +27,8 @@ use crate::task;
 /// ```
 #[inline]
 pub async fn yield_now() {
-    // Only returns `Poll::Pending` once to avoid stalling the runtime.
+    // Ensures we only return `Poll::Pending` once, to avoid stalling the
+    // runtime.
     let mut yielded = false;
 
     future::poll_fn(|_| {
@@ -37,8 +38,6 @@ pub async fn yield_now() {
 
         yielded = true;
 
-        // Current task will be deferred until the next "tick", weighted by how
-        // much of the execution budget it used.
         context::with_handle(|handle| handle.defer_task(task::id()));
 
         Poll::Pending

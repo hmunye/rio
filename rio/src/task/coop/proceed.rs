@@ -94,7 +94,6 @@ pub fn poll_proceed() -> Poll<BudgetGuard> {
         let mut budget = b.get();
 
         if budget.consume_unit() {
-            // Store the previous budget.
             let guard = BudgetGuard(b.clone());
 
             b.set(budget);
@@ -102,8 +101,7 @@ pub fn poll_proceed() -> Poll<BudgetGuard> {
             Poll::Ready(guard)
         } else {
             // Current task may still be able to make progress, but exhausted
-            // the execution budget. It will be deferred until the next "tick",
-            // weighted by how much of the execution budget it used.
+            // the execution budget.
             context::with_handle(|handle| handle.defer_task(task::id()));
 
             Poll::Pending

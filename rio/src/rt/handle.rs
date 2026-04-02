@@ -48,14 +48,22 @@ impl Handle {
     }
 
     pub fn spawn_task<F: Future + 'static>(&self, fut: F) -> Rc<TaskState> {
-        let task = Task::new_with(fut, |out, weak| {
+        let task = Task::new_with_unwind(fut, |res, weak| {
             if let Some(state) = weak.upgrade() {
-                if state.is_detached() {
-                    // No handle exists; mark as consumed and drop output.
-                    state.set_stage(TaskStage::Consumed);
-                } else {
-                    // Handle exists; retain the output.
-                    state.set_stage(TaskStage::Finished(Box::new(out)));
+                match res {
+                    Ok(out) => {
+                        if state.is_detached() {
+                            // No handle exists; mark as consumed and drop
+                            // output.
+                            state.set_stage(TaskStage::Consumed);
+                        } else {
+                            // Handle exists; retain the output.
+                            state.set_stage(TaskStage::Finished(Box::new(out)));
+                        }
+                    }
+                    Err(panic) => {
+                        state.set_stage(TaskStage::Panic(panic));
+                    }
                 }
 
                 if let Some(waker) = state.waker.take() {
@@ -65,7 +73,7 @@ impl Handle {
         });
 
         // NOTE: Return an `Rc` (not `Weak`) so the task’s output remains
-        // accessible even if the task is dropped (e.g., in `spawn_blocking`).
+        // accessible even when the task is dropped (e.g., in `spawn_blocking`).
         let state = Rc::clone(&task.state);
 
         self.scheduler.spawn(task, self.clone());

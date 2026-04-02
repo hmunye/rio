@@ -1,10 +1,11 @@
-use std::any::{self, Any};
+use std::any::Any;
 use std::cell::{Cell, RefCell};
-use std::fmt;
 use std::pin::Pin;
 use std::rc::{Rc, Weak};
 use std::task::{Context, Poll, Waker};
+use std::{any, fmt, future, panic};
 
+use crate::rt::context;
 use crate::task;
 
 /// Lifecycle stages of a `Task`.
@@ -23,6 +24,8 @@ pub enum TaskStage {
     Consumed,
     /// Task was canceled before completing; cannot be polled again.
     Canceled,
+    /// Task was canceled before completing; cannot be polled again.
+    Panic(Box<dyn Any + Send>),
 }
 
 /// Internal runtime state of a `Task`.
@@ -30,7 +33,6 @@ pub enum TaskStage {
 pub struct TaskState {
     pub id: task::Id,
     pub stage: RefCell<TaskStage>,
-    /// `Waker` to notify the `JoinHandle` awaiting this task's output.
     pub waker: RefCell<Option<Waker>>,
     pub detached: Cell<bool>,
 }
@@ -103,7 +105,60 @@ impl Task {
         }
     }
 
+    /// Creates a new `Task`, using the provided closure to handle the output of
+    /// `fut`.
+    ///
+    /// Any _panic_ is passed to the closure as `Err`.
+    #[must_use]
+    pub fn new_with_unwind<Fut, F>(fut: Fut, f: F) -> Self
+    where
+        Fut: Future + 'static,
+        F: FnOnce(Result<Fut::Output, Box<dyn Any + Send>>, Weak<TaskState>) + 'static,
+    {
+        let state = Rc::new(TaskState::default());
+        let weak = Rc::downgrade(&state);
+
+        Task {
+            fut: Box::pin(async move {
+                let res = {
+                    let mut inner_fut = fut;
+
+                    future::poll_fn(|cx| {
+                        match panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                            // SAFETY: `inner_fut` is pinned on the heap with
+                            // `Box::pin` for the lifetime of this `async` block
+                            // and never moved; we only borrow `&mut`.
+                            unsafe { Pin::new_unchecked(&mut inner_fut) }.poll(cx)
+                        })) {
+                            Ok(Poll::Ready(out)) => Poll::Ready(Ok(out)),
+                            Ok(Poll::Pending) => Poll::Pending,
+                            Err(panic) => Poll::Ready(Err(panic)),
+                        }
+                    })
+                    .await
+                };
+
+                f(res, weak);
+            }),
+            state,
+        }
+    }
+
     pub fn poll(&mut self, cx: &mut Context<'_>) -> Poll<()> {
+        struct ResetGuard {
+            prev: Option<task::Id>,
+        }
+
+        impl Drop for ResetGuard {
+            fn drop(&mut self) {
+                let _ = context::set_task_id(self.prev);
+            }
+        }
+
+        let _guard = ResetGuard {
+            prev: context::set_task_id(Some(self.state.id)),
+        };
+
         debug_assert!(
             !matches!(self.state.set_stage(TaskStage::Running), TaskStage::Running),
             "task #{} is already `Running` when polled",
