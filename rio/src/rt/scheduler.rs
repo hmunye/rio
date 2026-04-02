@@ -11,6 +11,11 @@ use crate::task::{
     coop::{self, Budget},
 };
 
+cfg_time! {
+    use std::time::Duration;
+    use std::thread;
+}
+
 #[derive(Debug)]
 struct Deferred {
     /// Each slot corresponds to the amount of execution budget used by that
@@ -104,7 +109,7 @@ impl Scheduler {
 
         self.spawn(task, handle);
 
-        while !self.is_idle() {
+        while self.work_remaining() {
             self.tick();
         }
 
@@ -142,8 +147,8 @@ impl Scheduler {
         self.tasks.borrow_mut().insert(id, (task, waker));
     }
 
-    fn is_idle(&self) -> bool {
-        self.tasks.borrow().is_empty()
+    fn work_remaining(&self) -> bool {
+        !self.tasks.borrow().is_empty()
     }
 
     fn run_task(&self, id: task::Id, mut task: Task, waker: LocalWaker) {
@@ -157,11 +162,11 @@ impl Scheduler {
     }
 
     fn tick(&self) {
-        // TODO: Use`std::thread::park_timeout` if there are no ready/deferred
-        // tasks and just active timers.
         #[cfg(feature = "time")]
         {
-            context::with_handle(Handle::drive_timers);
+            if let Some(timeout) = context::with_handle(Handle::drive_timers) {
+                self.try_park(timeout);
+            }
         }
 
         // Queue deferred tasks in the order of execution budget used during
@@ -191,5 +196,19 @@ impl Scheduler {
                 }
             }
         });
+    }
+}
+
+cfg_time! {
+    impl Scheduler {
+        fn is_idle(&self) -> bool {
+            self.ready.borrow().is_empty() && self.deferred.borrow().is_empty()
+        }
+
+        fn try_park(&self, timeout: Duration) {
+            if self.is_idle() {
+                thread::park_timeout(timeout);
+            }
+        }
     }
 }

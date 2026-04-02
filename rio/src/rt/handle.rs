@@ -7,7 +7,7 @@ use crate::task;
 cfg_time! {
     use crate::rt::time;
     use std::task::Waker;
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 }
 
 /// Runtime context guard.
@@ -98,8 +98,8 @@ impl Handle {
 
 cfg_time! {
     impl Handle {
-        pub fn drive_timers(&self) {
-            self.time.drive();
+        pub fn drive_timers(&self) -> Option<Duration> {
+            self.time.drive()
         }
 
         pub fn register_timer(&self, deadline: Instant, waker: Waker) {
