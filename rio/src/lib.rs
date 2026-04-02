@@ -41,6 +41,8 @@
 //! ensuring tasks are executed in an efficient manner, scheduling them to make
 //! progress fairly.
 
+// TODO: Add unit tests for all public API. Add `#[rio::test]` proc macro.
+
 #![deny(clippy::unwrap_used)]
 #![warn(clippy::pedantic)]
 #![warn(clippy::nursery)]
