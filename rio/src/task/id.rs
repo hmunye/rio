@@ -10,6 +10,7 @@ thread_local! {
 
 /// Opaque identifier for a task relative to all other tasks.
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[repr(transparent)]
 pub struct Id(u64);
 
 impl Id {

@@ -162,8 +162,8 @@ impl Interval {
 
             let last_tick = self.delay.deadline();
 
-            // Each tick is scheduled one `period` after `scheduled`, even if
-            // ticks were missed. If the interval was delayed, `scheduled` will
+            // Each tick is scheduled one `period` after `last_tick`, even if
+            // ticks were missed. If the interval was delayed, `last_tick` will
             // be in the past, so the next tick will return immediately.
             let next_tick = last_tick.checked_add(self.period()).unwrap_or_else(|| {
                 // <https://docs.rs/tokio/latest/src/tokio/time/instant.rs.html#34-36>

@@ -2,16 +2,18 @@ use std::cmp::Ordering;
 use std::task::Waker;
 use std::time::Instant;
 
+use crate::rt::time::RawHandle;
+
 #[derive(Debug)]
 pub struct TimerEntry {
     pub deadline: Instant,
     pub waker: Waker,
+    pub raw_handle: RawHandle,
 }
 
 impl Ord for TimerEntry {
     fn cmp(&self, other: &Self) -> Ordering {
-        // NOTE: Inverted so it is in min-heap order within `BinaryHeap`.
-        other.deadline.cmp(&self.deadline)
+        self.deadline.cmp(&other.deadline)
     }
 }
 

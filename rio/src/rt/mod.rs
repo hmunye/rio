@@ -20,5 +20,5 @@ pub(crate) mod task;
 pub(crate) use task::Task;
 
 cfg_time! {
-    mod time;
+    pub(crate) mod time;
 }

@@ -38,3 +38,14 @@ macro_rules! cfg_not_time {
         )*
     }
 }
+
+macro_rules! rt {
+    ($($tt:tt)*) => {
+        let rt = crate::rt::Runtime::new();
+        rt.block_on(async {
+            $(
+                $tt
+            )*
+        });
+    };
+}

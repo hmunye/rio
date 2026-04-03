@@ -3,6 +3,7 @@ use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 use crate::rt::context;
+use crate::rt::time::TimerHandle;
 
 /// Waits until `duration` has elapsed.
 ///
@@ -71,14 +72,14 @@ pub const fn sleep_until(deadline: Instant) -> Sleep {
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct Sleep {
     deadline: Instant,
-    registered: bool,
+    handle: Option<TimerHandle>,
 }
 
 impl Sleep {
     const fn new_timeout(deadline: Instant) -> Self {
         Sleep {
             deadline,
-            registered: false,
+            handle: None,
         }
     }
 
@@ -98,9 +99,12 @@ impl Sleep {
         self.deadline
     }
 
-    pub(crate) const fn reset(&mut self, deadline: Instant) {
+    pub(crate) fn reset(&mut self, deadline: Instant) {
         self.deadline = deadline;
-        self.registered = false;
+
+        if let Some(timer_handle) = &self.handle {
+            context::with_handle(|handle| handle.update_timer(timer_handle.raw(), deadline));
+        }
     }
 }
 
@@ -112,12 +116,10 @@ impl Future for Sleep {
             return Poll::Ready(());
         }
 
-        if !self.registered {
-            self.registered = true;
-
-            context::with_handle(|handle| {
-                handle.register_timer(self.deadline, cx.waker().clone());
-            });
+        if self.handle.is_none() {
+            self.handle = Some(context::with_handle(|handle| {
+                handle.register_timer(self.deadline, cx.waker().clone())
+            }));
         }
 
         Poll::Pending

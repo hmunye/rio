@@ -41,7 +41,7 @@
 //! ensuring tasks are executed in an efficient manner, scheduling them to make
 //! progress fairly.
 
-// TODO: Add unit tests for all public API. Add `#[rio::test]` proc macro.
+// TODO: Add unit tests for all public API. Add runtime shutdown.
 
 #![deny(clippy::unwrap_used)]
 #![warn(clippy::pedantic)]
@@ -67,6 +67,7 @@ pub use task::spawn;
 
 cfg_macros! {
     pub use rio_macros::main;
+    pub use rio_macros::test;
 }
 
 cfg_time! {

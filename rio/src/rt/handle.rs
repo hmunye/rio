@@ -5,9 +5,10 @@ use crate::rt::{Scheduler, Task, context};
 use crate::task;
 
 cfg_time! {
-    use crate::rt::time;
     use std::task::Waker;
     use std::time::{Duration, Instant};
+
+    use crate::rt::time::{self, TimerHandle, RawHandle};
 }
 
 /// Runtime context guard.
@@ -99,8 +100,16 @@ cfg_time! {
             self.time.drive()
         }
 
-        pub fn register_timer(&self, deadline: Instant, waker: Waker) {
-            self.time.register_timer(deadline, waker);
+        pub fn register_timer(&self, deadline: Instant, waker: Waker) -> TimerHandle {
+            self.time.register_timer(deadline, waker)
+        }
+
+        pub fn update_timer(&self, raw_handle: RawHandle, deadline: Instant) -> bool {
+            self.time.update_timer(raw_handle, deadline)
+        }
+
+        pub fn cancel_timer(&self, raw_handle: RawHandle) {
+            self.time.cancel_timer(raw_handle);
         }
     }
 }
