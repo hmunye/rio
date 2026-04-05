@@ -5,10 +5,11 @@
 //! able to yield control back to the runtime to allow other ready tasks to
 //! progress.
 //!
-//! Tasks must remain non-blocking. Avoid blocking the current thread or doing
-//! heavy CPU-work during task execution without yielding. Instead, utilize the
-//! non-blocking asynchronous primitives provided by `rio` and/or opt-in to
-//! [`cooperative scheduling`](coop).
+//! Tasks __must never block__ the current thread. Always utilize the provided
+//! non-blocking asynchronous primitives or opt-in to [`cooperative scheduling`]
+//! to ensure the runtime remains responsive.
+//!
+//! [`cooperative scheduling`]: coop
 
 pub mod coop;
 

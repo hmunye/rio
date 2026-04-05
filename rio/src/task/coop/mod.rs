@@ -2,54 +2,57 @@
 //!
 //! ### Why Cooperation Matters
 //!
-//! `rio` relies on cooperative scheduling to manage multiple tasks on a single
-//! thread. Unlike OS threads, the runtime cannot forcibly interrupt a running
-//! task. If a task's [`poll`] method executes heavy computation without
-//! yielding, it monopolizes the scheduler, preventing other tasks from making
-//! progress. This leads to __starvation__ of ready tasks and delays in
-//! time-bound resources (i.e., timers).
+//! Unlike OS threads, which can be forcibly interrupted by the OS kernel
+//! (preemption), `rio` relies on __cooperative scheduling__. This means the
+//! runtime cannot interrupt a task; a task must voluntarily yield control.
+//!
+//! If a task performs heavy CPU-bound computation within its [`poll`] method
+//! without returning [`Poll::Pending`], it monopolizes the underlying thread.
+//! This leads to __task starvation__, where other ready tasks are prevented
+//! from making progress.
 //!
 //! ### Cooperative Scheduling
 //!
-//! Long-running CPU-intensive workloads can stall the entire runtime.
+//! A long-running loop that performs significant work without yielding can
+//! stall the entire runtime:
 //!
 //! ```
 //! use std::future;
 //!
-//! // Problem: This future __starves__ other tasks until complete.
 //! async fn starving_fut() {
 //!     for _ in 0..1_000_000_000 {
-//!         /* doing work ... */
+//!         // ...
 //!
-//!         // Does _not_ yield to the runtime, since it is always ready.
+//!         // Even though we `await` here, because the future is always ready,
+//!         // the runtime immediately polls this task again.
 //!         future::ready(()).await;
 //!     }
 //! }
 //! ```
 //!
-//! To ensure fair scheduling, __wrap CPU-intensive futures__ with this module's
-//! primitives so they periodically yield back to the `rio` runtime.
+//! To ensure fair scheduling, make use of the cooperative utilities from this
+//! module. These utilities ensure that the task periodically yields control, in
+//! a way that allows other tasks to run:
 //!
 //! ```
 //! use std::future;
 //!
-//! // Solution: Use `make_cooperative` to prevent __starvation__.
 //! async fn blocking_loop() {
 //!     for _ in 0..1_000_000_000 {
-//!         /* doing work ... */
+//!         // ...
 //!
-//!         // Ensures this future participates in the runtime’s cooperative
-//!         // execution, allowing other tasks to make progress after the budget
-//!         // is exhausted.
+//!         // This ensures the future participates in the runtime’s cooperative
+//!         // scheduling, counting towards the task's execution budget.
 //!         rio::task::coop::make_cooperative(future::ready(())).await;
 //!     }
 //! }
 //! ```
 //!
-//! For work within tasks that should bypass cooperative checks, see
+//! For futures within tasks that should bypass cooperative checks, see
 //! [`make_unconstrained`].
 //!
-//! [`poll`]: std::future::Future::poll
+//! [`poll`]: Future::poll
+//! [`Poll::Pending`]: std::task::Poll::Pending
 
 mod budget;
 pub use budget::has_budget_remaining;

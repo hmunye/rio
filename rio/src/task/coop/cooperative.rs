@@ -23,10 +23,8 @@ impl<F: Future> Cooperative<F> {
         // making it safe to pin the `fut` field, since `Pin<T>` guarantees that
         // the memory address of this instance will not change.
         unsafe {
-            let mut_self = self.get_unchecked_mut();
-
             CooperativeProj {
-                fut: Pin::new_unchecked(&mut mut_self.fut),
+                fut: Pin::new_unchecked(&mut self.get_unchecked_mut().fut),
             }
         }
     }
@@ -75,19 +73,18 @@ impl<F: Future> fmt::Debug for Cooperative<F> {
 /// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
-/// use rio::task;
 /// use std::future;
 ///
 /// let fut = async {
 ///     for _ in 0..1_000_000 {
 ///         // This will always be ready. If cooperative scheduling was not in
-///         // effect (i.e., using `task::coop::make_unconstrained()`), this
-///         // code would not be forced to yield.
+///         // effect (i.e., using `rio::task::coop::make_unconstrained`), the
+///         // task would not be forced to yield.
 ///         future::ready(()).await;
 ///     }
 /// };
 ///
-/// task::coop::make_cooperative(fut).await;
+/// rio::task::coop::make_cooperative(fut).await;
 /// # }
 /// ```
 ///

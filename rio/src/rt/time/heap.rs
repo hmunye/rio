@@ -1,6 +1,7 @@
+use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::task::Waker;
 use std::time::Instant;
-use std::{cmp::Ordering, collections::HashMap};
 
 use crate::rt::time::{RawHandle, TimerEntry, TimerHandle};
 
@@ -17,8 +18,8 @@ pub struct TimerHeap {
     buf: Vec<TimerEntry>,
 }
 
-/// Allows for yielding references to the entries of a `TimerHeap` in heap-order
-/// and restores the heap on `Drop`.
+/// Iterator that yields references over the entries of a `TimerHeap` in
+/// heap-order, restoring its prior state on `Drop`.
 #[derive(Debug)]
 pub struct HeapIter<'a> {
     heap: &'a mut TimerHeap,
@@ -26,31 +27,39 @@ pub struct HeapIter<'a> {
 }
 
 impl HeapIter<'_> {
-    pub fn next(&self) -> Option<&TimerEntry> {
-        if self.is_exhausted() {
+    #[must_use]
+    pub fn next_entry(&mut self) -> Option<&TimerEntry> {
+        if self.curr >= self.heap.len() {
             return None;
         }
 
-        self.heap.peek()
-    }
-
-    pub fn set_next(&mut self) {
         self.curr += 1;
+        let tail = self.heap.len() - self.curr;
 
-        let end = self.heap.len() - self.curr;
+        self.heap.buf.swap(0, tail);
+        self.heap.sift_down(0, tail);
 
-        self.heap.buf.swap(0, end);
-        self.heap.sift_down(0, end);
-    }
-
-    const fn is_exhausted(&self) -> bool {
-        self.curr >= self.heap.len()
+        Some(&self.heap.buf[tail])
     }
 }
 
 impl Drop for HeapIter<'_> {
     fn drop(&mut self) {
-        self.heap.rebuild();
+        if !self.heap.is_empty() {
+            let n = self.heap.len();
+            let tail = self.heap.len() - self.curr;
+
+            if tail * (usize::ilog2(n) as usize) < n {
+                // If few elements were iterated, it’s cheaper to `sift_up` each
+                // one individually. O(k log n) where `k` is the number of
+                // entries within `tail..n`.
+                for i in tail..n {
+                    self.heap.sift_up(0, i);
+                }
+            } else {
+                self.heap.rebuild();
+            }
+        }
     }
 }
 
@@ -225,6 +234,7 @@ impl TimerHeap {
         }
     }
 
+    #[allow(unused)]
     pub fn peek(&self) -> Option<&TimerEntry> {
         self.buf.first()
     }

@@ -23,10 +23,8 @@ impl<F: Future> Unconstrained<F> {
         // making it safe to pin the `fut` field, since `Pin<T>` guarantees that
         // the memory address of this instance will not change.
         unsafe {
-            let mut_self = self.get_unchecked_mut();
-
             UnconstrainedProj {
-                fut: Pin::new_unchecked(&mut mut_self.fut),
+                fut: Pin::new_unchecked(&mut self.get_unchecked_mut().fut),
             }
         }
     }
@@ -68,7 +66,7 @@ impl<F: Future> fmt::Debug for Unconstrained<F> {
 /// let fut = async {
 ///     for _ in 0..1_000_000 {
 ///         // This will always be ready. If cooperative scheduling was in
-///         // effect, this code would be forced to yield periodically.
+///         // effect, the task would be forced to yield periodically.
 ///         future::ready(()).await;
 ///     }
 /// };

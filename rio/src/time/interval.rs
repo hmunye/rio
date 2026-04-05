@@ -5,10 +5,10 @@ use std::time::{Duration, Instant};
 
 use crate::time::{self, Sleep};
 
-/// Creates an `Interval` that periodically yields at a fixed `period`, with the
-/// first tick completing immediately.
+/// Creates an `Interval` that triggers at a fixed `period`, with the first tick
+/// completing immediately.
 ///
-/// Equivalent to calling <code>[interval_at](Instant::now(), period)</code>.
+/// Equivalent to <code>[interval_at](Instant::now(), period)</code>.
 ///
 /// The `Interval` is canceled by dropping it.
 ///
@@ -64,8 +64,8 @@ pub fn interval(period: Duration) -> Interval {
     Interval::new(period)
 }
 
-/// Creates an `Interval` that periodically yields at a fixed `period`, with the
-/// first tick completing at `start`.
+/// Creates an `Interval` that triggers at a fixed `period`, with the first tick
+/// completing at `start`.
 ///
 /// The `Interval` is canceled by dropping it.
 ///
@@ -100,7 +100,8 @@ pub fn interval(period: Duration) -> Interval {
 /// # async fn main() {
 /// use std::time::{Duration, Instant};
 ///
-/// let mut interval = rio::time::interval_at(Instant::now(), Duration::from_millis(50));
+/// let start = Instant::now();
+/// let mut interval = rio::time::interval_at(start, Duration::from_millis(50));
 ///
 /// interval.tick().await; // ticks immediately
 ///
@@ -131,8 +132,8 @@ pub struct Interval {
 }
 
 impl Interval {
-    /// Waits until the next interval tick, returning the `Instant` at which
-    /// that tick was scheduled.
+    /// Waits until the next interval tick, returning the [`Instant`] it was
+    /// scheduled to complete.
     ///
     /// # Panics
     ///
@@ -164,7 +165,7 @@ impl Interval {
 
             // Each tick is scheduled one `period` after `last_tick`, even if
             // ticks were missed. If the interval was delayed, `last_tick` will
-            // be in the past, so the next tick will return immediately.
+            // be in the past, so `next_tick` will complete immediately.
             let next_tick = last_tick.checked_add(self.period()).unwrap_or_else(|| {
                 // <https://docs.rs/tokio/latest/src/tokio/time/instant.rs.html#34-36>
                 Instant::now() + Duration::from_secs(86400 * 365 * 30)

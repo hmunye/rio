@@ -1,7 +1,7 @@
 use crate::rt::context;
 
-/// Returns `true` if there is execution budget left for the current task to
-/// proceed.
+/// Returns `true` if there is execution budget remaining for the current task
+/// to proceed.
 #[inline]
 #[must_use]
 pub fn has_budget_remaining() -> bool {
@@ -11,12 +11,12 @@ pub fn has_budget_remaining() -> bool {
 /// Execution Budget.
 ///
 /// Tracks the number of polling iterations that may be performed within a
-/// "tick", before control is yielded to the runtime.
+/// scheduler "tick", before control is yielded back.
 #[derive(Debug, Clone, Copy)]
 pub struct Budget(Option<u8>);
 
 impl Budget {
-    /// One less than `tokio`'s initial value to fit within a `u128` bitmap.
+    /// One less than `tokio`'s initial value to use within a `u128` bitmap.
     ///
     /// <https://docs.rs/tokio/latest/src/tokio/task/coop/mod.rs.html#116>
     pub const INITIAL: u8 = 127;
@@ -32,7 +32,7 @@ impl Budget {
     }
 
     /// Decrements the execution budget, returning `true` if the budget was not
-    /// _exhausted_.
+    /// exhausted.
     #[must_use]
     pub fn consume_unit(&mut self) -> bool {
         self.0.is_none_or(|b| {

@@ -1,16 +1,17 @@
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, ready};
 use std::time::{Duration, Instant};
 
 use crate::rt::context;
 use crate::rt::time::TimerHandle;
+use crate::task::coop;
 
 /// Waits until `duration` has elapsed.
 ///
-/// Equivalent to calling <code>[sleep_until](Instant::now() + duration)</code>.
+/// Equivalent to <code>[sleep_until](Instant::now() + duration)</code>.
 ///
 /// No work is performed by the task while awaiting on the `Sleep` to complete.
-/// The returned `Sleep` is canceled by dropping it.
+/// The `Sleep` is canceled by dropping it.
 ///
 /// # Panics
 ///
@@ -44,7 +45,7 @@ pub fn sleep(duration: Duration) -> Sleep {
 /// Waits until `deadline` is reached.
 ///
 /// No work is performed by the task while awaiting on the `Sleep` to complete.
-/// The returned `Sleep` is canceled by dropping it.
+/// The `Sleep` is canceled by dropping it.
 ///
 /// # Panics
 ///
@@ -76,6 +77,20 @@ pub struct Sleep {
 }
 
 impl Sleep {
+    /// Returns `true` if the deadline has elapsed.
+    #[inline]
+    #[must_use]
+    pub fn is_elapsed(&self) -> bool {
+        Instant::now() >= self.deadline
+    }
+
+    /// Returns the [`Instant`] this `Sleep` will elapse.
+    #[inline]
+    #[must_use]
+    pub const fn deadline(&self) -> Instant {
+        self.deadline
+    }
+
     const fn new_timeout(deadline: Instant) -> Self {
         Sleep {
             deadline,
@@ -83,22 +98,7 @@ impl Sleep {
         }
     }
 
-    /// Returns `true` if this `Sleep` has elapsed.
-    ///
-    /// A `Sleep` is elapsed when the requested duration/deadline has elapsed.
-    #[inline]
-    #[must_use]
-    pub fn is_elapsed(&self) -> bool {
-        Instant::now() >= self.deadline
-    }
-
-    /// Returns the instant at which this `Sleep` will elapse.
-    #[inline]
-    #[must_use]
-    pub const fn deadline(&self) -> Instant {
-        self.deadline
-    }
-
+    /// Updates the deadline and the underlying timer without re-registration.
     pub(crate) fn reset(&mut self, deadline: Instant) {
         self.deadline = deadline;
 
@@ -112,7 +112,10 @@ impl Future for Sleep {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let coop = ready!(coop::poll_proceed());
+
         if self.is_elapsed() {
+            coop.made_progress();
             return Poll::Ready(());
         }
 

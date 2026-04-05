@@ -4,7 +4,32 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{Attribute, ItemFn, parse_macro_input};
 
-/// Marks the `async` "main" function to be executed by the `rio` runtime.
+/// Wraps the `main` function in a synchronous `rio` runtime entry point.
+///
+/// This macro allows you to define your application entry point using an
+/// `async fn main` signature.
+///
+/// # Examples
+///
+/// Transforms this:
+///
+/// ```text
+/// #[rio::main]
+/// async fn main() {
+///     // ...
+/// }
+/// ```
+///
+/// Into a function equivalent to:
+///
+/// ```test
+/// fn main() {
+///     let rt = rio::rt::Runtime::new();
+///     rt.block_on(async {
+///         // ...
+///     })
+/// }
+/// ```
 #[proc_macro_attribute]
 pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemFn);
@@ -44,13 +69,13 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     })
 }
 
-// Check whether given attribute is a test attribute of forms:
-//
-// * `#[test]`
-// * `#[core::prelude::*::test]` or `#[::core::prelude::*::test]`
-// * `#[std::prelude::*::test]` or `#[::std::prelude::*::test]`
-//
-// <https://docs.rs/tokio-macros/2.6.1/src/tokio_macros/entry.rs.html#610>
+/// Check whether given attribute is a test attribute of forms:
+///
+/// * `#[test]`
+/// * `#[core::prelude::*::test]` or `#[::core::prelude::*::test]`
+/// * `#[std::prelude::*::test]` or `#[::std::prelude::*::test]`
+///
+/// <https://docs.rs/tokio-macros/2.6.1/src/tokio_macros/entry.rs.html#610>
 fn is_test_attribute(attr: &Attribute) -> bool {
     let path = match &attr.meta {
         syn::Meta::Path(path) => path,
@@ -79,8 +104,33 @@ fn is_test_attribute(attr: &Attribute) -> bool {
     })
 }
 
-/// Marks an `async` function to be executed by the `rio` runtime, suitable for
-/// test environments.
+/// Wraps an `async` function in a synchronous `rio` runtime entry point.
+///
+/// This macro is intended for use in unit tests, allowing `async` functions
+/// to be executed within a synchronous test environment.
+///
+/// # Examples
+///
+/// Transforms this:
+///
+/// ```text
+/// #[rio::test]
+/// async fn my_async_test() {
+///     // ...
+/// }
+/// ```
+///
+/// Into a function equivalent to:
+///
+/// ```text
+/// #[test]
+/// fn my_async_test() {
+///     let rt = rio::rt::Runtime::new();
+///     rt.block_on(async {
+///         // ...
+///     })
+/// }
+/// ```
 #[proc_macro_attribute]
 pub fn test(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemFn);
@@ -103,7 +153,7 @@ pub fn test(_attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     if !sig.inputs.is_empty() {
-        return syn::Error::new_spanned(&sig.inputs, "test functions cannot accept arguments")
+        return syn::Error::new_spanned(&sig.inputs, "test function cannot accept arguments")
             .to_compile_error()
             .into();
     }

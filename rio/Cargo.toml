@@ -13,7 +13,7 @@ categories = ["asynchronous"]
 keywords = ["async", "non-blocking", "futures"]
 
 [features]
-# Include nothing.
+# Enable nothing.
 default = []
 
 # Enable everything.

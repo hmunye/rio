@@ -1,10 +1,10 @@
 use crate::rt::context;
 use crate::task::JoinHandle;
 
-/// Spawns a new asynchronous task, returning a [`JoinHandle`].
+/// Spawns a new asynchronous task, returning its [`JoinHandle`].
 ///
 /// The task begins execution immediately, enabling it to run concurrently with
-/// other tasks.
+/// other ready tasks.
 ///
 /// # Panics
 ///

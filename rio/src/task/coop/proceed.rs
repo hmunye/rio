@@ -10,10 +10,10 @@ use crate::task::{self, coop::Budget};
 pub struct BudgetGuard(Cell<Budget>);
 
 impl BudgetGuard {
-    /// Signals that the current task has made progress, so the execution budget
-    /// is __not__ rolled back to its previous value.
+    /// Signals that the current task has made progress, ensuring the execution
+    /// budget is __not__ rolled back to its previous value.
     ///
-    /// This should be called after a future returns `Poll::Ready` to indicate
+    /// This should be called before a future returns `Poll::Ready` to indicate
     /// actual work was done.
     #[inline]
     pub fn made_progress(&self) {
@@ -32,8 +32,8 @@ impl Drop for BudgetGuard {
 }
 
 /// Decrements the current execution budget, returning a [`BudgetGuard`] if
-/// allowed to proceed, otherwise, returns [`Poll::Pending`] and yields control
-/// to the runtime.
+/// allowed to proceed. Returns [`Poll::Pending`] if the budget is exhausted,
+/// yielding control to the runtime.
 ///
 /// The budget is restored to its state prior to calling `poll_proceed` when the
 /// guard is dropped, unless committed using [`BudgetGuard::made_progress`]. It
@@ -74,6 +74,7 @@ impl Drop for BudgetGuard {
 ///
 ///     fn poll(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
 ///         while !self.is_complete() {
+///             // Ensure there is budget remaining to continue.
 ///             let coop = ready!(rio::task::coop::poll_proceed());
 ///
 ///             println!("task #{}: {}", self.id, self.current);
@@ -83,7 +84,7 @@ impl Drop for BudgetGuard {
 ///             coop.made_progress();
 ///         }
 ///
-///         // The counter has finished; future is complete.
+///         // Counter has finished; future is complete.
 ///         Poll::Ready(())
 ///     }
 /// }
@@ -100,10 +101,7 @@ pub fn poll_proceed() -> Poll<BudgetGuard> {
 
             Poll::Ready(guard)
         } else {
-            // Current task may still be able to make progress, but exhausted
-            // the execution budget.
             context::with_handle(|handle| handle.defer_task(task::id()));
-
             Poll::Pending
         }
     })

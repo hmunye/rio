@@ -27,10 +27,8 @@ impl Driver {
         self.timers.borrow_mut().push(deadline, waker)
     }
 
-    /// Attempts to update the `deadline` of the timer identified by `raw_handle`,
-    /// returning `true` if successful.
-    ///
-    /// Updates to an existing timer do not require re-registration.
+    /// Attempts to update the `deadline` of the timer identified by
+    /// `raw_handle`, returning `true` if successful.
     pub fn update_timer(&self, raw_handle: RawHandle, deadline: Instant) -> bool {
         self.timers
             .borrow_mut()
@@ -69,20 +67,17 @@ impl Driver {
 
         let mut iter = timers.heap_iter();
 
-        while let Some(entry) = iter.next() {
+        while let Some(entry) = iter.next_entry() {
             let deadline = entry.deadline;
 
             if deadline <= now {
                 entry.waker.wake_by_ref();
             } else {
+                timeout = Some(deadline.duration_since(now));
                 // Since the earliest deadline in the heap hasn't elapsed, all
                 // other deadlines are guaranteed not to have elapsed either.
-                timeout = Some(deadline.duration_since(now));
-
                 break;
             }
-
-            iter.set_next();
         }
 
         timeout

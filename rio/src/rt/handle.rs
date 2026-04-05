@@ -74,8 +74,8 @@ impl Handle {
             }
         });
 
-        // NOTE: Return an `Rc` (not `Weak`) so the task’s output remains
-        // accessible even when the task is dropped (e.g., in `spawn_blocking`).
+        // NOTE: Returns an `Rc` (not `Weak`) so the task’s output remains
+        // accessible even when the task is dropped.
         let state = Rc::clone(&task.state);
 
         self.scheduler.spawn(task, Rc::downgrade(&self.scheduler));

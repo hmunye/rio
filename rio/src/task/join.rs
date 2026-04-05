@@ -3,10 +3,10 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::rc::Rc;
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, ready};
 
 use crate::rt::task::{TaskStage, TaskState};
-use crate::task;
+use crate::task::{self, coop};
 
 #[non_exhaustive]
 enum InnerJoinErr {
@@ -252,7 +252,7 @@ impl<T: 'static> JoinHandle<T> {
     /// # Panics
     ///
     /// Panics if the task's output cannot be downcast to `T` or if there is no
-    /// output retained by the current task stage.
+    /// output in the current task stage.
     pub(crate) fn take_output(&self) -> Result<T, JoinError> {
         debug_assert!(
             !self.state.is_detached(),
@@ -304,10 +304,13 @@ impl<T: 'static> Future for JoinHandle<T> {
             self.id()
         );
 
+        let coop = ready!(coop::poll_proceed());
+
         if self.state.is_incomplete() {
             self.state.set_waker(cx.waker().clone());
             Poll::Pending
         } else {
+            coop.made_progress();
             Poll::Ready(self.take_output())
         }
     }

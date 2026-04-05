@@ -46,7 +46,7 @@ impl Deferred {
         let next_bucket = self.bitmap.trailing_zeros() as usize;
         let bucket = &mut self.buckets[next_bucket];
 
-        // Mark bucket as empty since it will be drained.
+        // Mark bucket as empty since it will be fully drained.
         self.bitmap &= !(1 << next_bucket);
 
         Some(bucket.drain(..))
@@ -101,13 +101,13 @@ impl Scheduler {
     ) -> F::Output {
         let task = Task::new_with(fut, |out, weak| {
             if let Some(state) = weak.upgrade() {
-                // We know the handle exists; retain the output.
+                // We know the handle is not dropped; retain the output.
                 state.set_stage(TaskStage::Finished(Box::new(out)));
             }
         });
 
         let join = JoinHandle {
-            // NOTE: Use an `Rc` (not `Weak`) so the task’s output remains
+            // NOTE: Uses an `Rc` (not `Weak`) so the task’s output remains
             // accessible even when the task is dropped.
             state: Rc::clone(&task.state),
             _marker: std::marker::PhantomData,
@@ -120,10 +120,11 @@ impl Scheduler {
         }
 
         join.take_output()
-            .expect("`block_on` task missing output: task should have completed")
+            .expect("`block_on` task missing output: all tasks should have completed")
     }
 
-    /// Registers the provided asynchronous task for execution by the scheduler.
+    /// Registers the provided asynchronous task for polling, potentially on the
+    /// current "tick".
     pub fn spawn(&self, task: Task, handle: Weak<Scheduler>) {
         self.register_task(task, handle);
     }
@@ -175,8 +176,8 @@ impl Scheduler {
             }
         }
 
-        // Queue deferred tasks in the order of execution budget used during
-        // the previous "tick" (ascending).
+        // Queue deferred tasks in ascending order of execution budget used
+        // during the previous "tick".
         while let Some(ids) = self.deferred.borrow_mut().next_bucket() {
             self.ready.borrow_mut().extend(ids);
         }
@@ -213,7 +214,7 @@ cfg_time! {
 
         fn try_park(&self, timeout: Duration) {
             if self.is_idle() {
-                println!("[[parking thread until next timer]]");
+                println!("[[parking thread until next timer deadline]]");
                 thread::park_timeout(timeout);
             }
         }

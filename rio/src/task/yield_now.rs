@@ -19,6 +19,9 @@ use crate::task;
 /// # async fn main() {
 /// async fn foo() {
 ///     println!("task #{}", rio::task::id());
+///
+///     // ...
+///
 ///     rio::task::yield_now().await;
 /// }
 ///
@@ -27,8 +30,8 @@ use crate::task;
 /// ```
 #[inline]
 pub async fn yield_now() {
-    // Ensures we only return `Poll::Pending` once, to avoid stalling the
-    // runtime.
+    // Ensures we only yield up to the scheduler once, to avoid blocking other
+    // tasks.
     let mut yielded = false;
 
     future::poll_fn(|_| {
