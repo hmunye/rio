@@ -10,7 +10,7 @@ use crate::rt::time::{RawHandle, TimerEntry, TimerHandle};
 /// Maintains the property where the timer with the earliest deadline is at the
 /// root, and each parent timer's deadline is earlier than or equal to that of
 /// its children.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TimerHeap {
     // Mapping from a `RawHandle` to its position in `buf`.
     handles: HashMap<RawHandle, usize>,
@@ -49,10 +49,10 @@ impl Drop for HeapIter<'_> {
             let n = self.heap.len();
             let tail = self.heap.len() - self.curr;
 
+            // If few elements were iterated, it’s cheaper to `sift_up` each
+            // one individually. O(k log n) where `k` is the number of entries
+            // iterated over.
             if tail * (usize::ilog2(n) as usize) < n {
-                // If few elements were iterated, it’s cheaper to `sift_up` each
-                // one individually. O(k log n) where `k` is the number of
-                // entries within `tail..n`.
                 for i in tail..n {
                     self.heap.sift_up(0, i);
                 }
@@ -131,25 +131,21 @@ impl TimerHeap {
     }
 
     pub fn push(&mut self, deadline: Instant, waker: Waker) -> TimerHandle {
-        // Item to sift up will be at this index after `push`.
-        let pos = self.len();
         let guard = HeapifyGuard {
+            // Item to sift up will be at this index after `push`.
+            sift_info: SiftInfo::new(self.len(), true),
             heap: self,
-            sift_info: SiftInfo::new(pos, true),
         };
 
         let handle = TimerHandle::new();
-        let raw_handle = handle.raw();
 
         // Appending maintains the invariant of a complete binary tree: every
         // level, except possibly the last, is fully filled.
         guard.heap.buf.push(TimerEntry {
             deadline,
             waker,
-            raw_handle,
+            raw_handle: handle.raw(),
         });
-
-        guard.heap.handles.insert(raw_handle, pos);
 
         handle
 
@@ -161,10 +157,9 @@ impl TimerHeap {
         if self.is_empty() {
             None
         } else {
-            // Length of the heap after `swap_remove`.
-            let end = self.len() - 1;
             let guard = HeapifyGuard {
-                sift_info: SiftInfo::new(end, false),
+                // Where `sift_down` should stop after `swap_remove`.
+                sift_info: SiftInfo::new(self.len() - 1, false),
                 heap: self,
             };
 
@@ -179,22 +174,20 @@ impl TimerHeap {
         }
     }
 
-    pub fn update_priority(&mut self, raw_handle: RawHandle, deadline: Instant) -> bool {
-        if let Some(&idx) = self.handles.get(&raw_handle) {
+    pub fn update_priority(&mut self, handle: &TimerHandle, deadline: Instant) -> bool {
+        if let Some(&idx) = self.handles.get(&handle.raw()) {
             let timer = &mut self.buf[idx];
 
             return match timer.deadline.cmp(&deadline) {
                 Ordering::Less => {
                     timer.deadline = deadline;
                     self.sift_down(idx, self.len());
-
                     true
                 }
                 Ordering::Equal => false,
                 Ordering::Greater => {
                     timer.deadline = deadline;
                     self.sift_up(0, idx);
-
                     true
                 }
             };
@@ -203,28 +196,19 @@ impl TimerHeap {
         false
     }
 
-    pub fn remove(&mut self, raw_handle: RawHandle) {
-        if let Some(idx) = self.handles.remove(&raw_handle) {
+    pub fn remove(&mut self, handle: &TimerHandle) -> Option<TimerEntry> {
+        if let Some(idx) = self.handles.remove(&handle.raw()) {
             // NOTE: O(1) time, instead of `remove(idx)` which is O(n).
-            let _ = self.buf.swap_remove(idx);
+            let timer = self.buf.swap_remove(idx);
 
-            if self.len() == 1 {
-                debug_assert!(
-                    self.handles.len() == 1,
-                    "there should be one handle remaining for the last timer"
-                );
-
-                let entry = self
-                    .handles
-                    .iter_mut()
-                    .next()
-                    .expect("there should be one handle remaining for the last timer");
-
-                *entry.1 = 0;
-            } else {
+            if !self.is_empty() {
                 self.sift_down(idx, self.len());
             }
+
+            return Some(timer);
         }
+
+        None
     }
 
     pub const fn heap_iter(&mut self) -> HeapIter<'_> {
@@ -283,11 +267,12 @@ impl TimerHeap {
             // Swap item at `pos` with its parent.
             self.buf.swap(pos, parent);
 
-            self.handles.insert(self.buf[pos].raw_handle, pos);
             self.handles.insert(self.buf[parent].raw_handle, parent);
 
             pos = parent;
         }
+
+        self.handles.insert(self.buf[pos].raw_handle, pos);
 
         pos
     }
@@ -333,11 +318,14 @@ impl TimerHeap {
             } else {
                 self.buf.swap(min, pos);
 
-                self.handles.insert(self.buf[pos].raw_handle, pos);
                 self.handles.insert(self.buf[min].raw_handle, min);
 
                 pos = min;
             }
+        }
+
+        if pos < self.len() {
+            self.handles.insert(self.buf[pos].raw_handle, pos);
         }
 
         pos
@@ -357,16 +345,30 @@ mod tests {
     use std::task::Waker;
     use std::time::{Duration, Instant};
 
+    // NOTE: Tests are wrapped in `rt!` macro since `TimerHandle::Drop` relies
+    // on a runtime context to cancel associated timers. We create a separate
+    // `TimerHeap` instance for testing the heap logic, but the Drop impl still
+    // attempts to cancel on the runtime's `TimerHeap`, effectively a noop.
+
+    #[test]
+    fn test_new() {
+        let heap = TimerHeap::new();
+
+        assert_eq!(heap.len(), 0);
+        assert!(heap.is_empty());
+        assert_eq!(heap.peek(), None);
+    }
+
     #[test]
     fn test_push_one() {
         rt! {
             let mut heap = TimerHeap::new();
 
             let deadline1 = Instant::now() + Duration::from_secs(1);
-            let _handle1 = heap.push(deadline1, Waker::noop().clone());
+            let _h1 = heap.push(deadline1, Waker::noop().clone());
 
-            assert!(!heap.is_empty());
             assert_eq!(heap.len(), 1);
+            assert!(!heap.is_empty());
             assert_eq!(heap.peek().unwrap().deadline, deadline1);
         }
     }
@@ -377,7 +379,7 @@ mod tests {
             let mut heap = TimerHeap::new();
 
             let deadline1 = Instant::now() + Duration::from_secs(1);
-            let _handle1 = heap.push(deadline1, Waker::noop().clone());
+            let _h1 = heap.push(deadline1, Waker::noop().clone());
 
             assert_eq!(heap.len(), 1);
             assert!(!heap.is_empty());
@@ -385,9 +387,406 @@ mod tests {
 
             let popped = heap.pop();
 
-            assert!(heap.is_empty());
             assert_eq!(heap.len(), 0);
+            assert!(heap.is_empty());
             assert_eq!(popped.unwrap().deadline, deadline1);
+            assert_eq!(heap.peek(), None);
+        }
+    }
+
+    #[test]
+    fn test_push_many() {
+        rt! {
+            let mut heap = TimerHeap::new();
+            let now = Instant::now();
+
+            let deadlines = [
+                now + Duration::from_secs(5),
+                now + Duration::from_secs(7),
+                now + Duration::from_secs(2),
+                now + Duration::from_secs(4),
+                now + Duration::from_secs(1),
+            ];
+
+            let _handles: Vec<_> = deadlines
+                .iter()
+                .map(|d| heap.push(*d, Waker::noop().clone()))
+                .collect();
+
+            assert_eq!(heap.len(), deadlines.len());
+            assert!(!heap.is_empty());
+            assert_eq!(heap.peek().unwrap().deadline, *deadlines.last().unwrap());
+        }
+    }
+
+    #[test]
+    fn test_pop_many() {
+        rt! {
+            let mut heap = TimerHeap::new();
+            let now = Instant::now();
+
+            let mut deadlines = [
+                now + Duration::from_secs(5),
+                now + Duration::from_secs(7),
+                now + Duration::from_secs(2),
+                now + Duration::from_secs(4),
+                now + Duration::from_secs(1),
+            ];
+
+            let _handles: Vec<_> = deadlines
+                .iter()
+                .map(|d| heap.push(*d, Waker::noop().clone()))
+                .collect();
+
+            assert_eq!(heap.len(), deadlines.len());
+            assert!(!heap.is_empty());
+
+            deadlines.sort();
+
+            for i in 0..deadlines.len() {
+                assert_eq!(heap.pop().unwrap().deadline, deadlines[i]);
+            }
+
+            assert_eq!(heap.len(), 0);
+            assert!(heap.is_empty());
+            assert_eq!(heap.pop(), None);
+        }
+    }
+
+    #[test]
+    fn test_push_duplicate() {
+        rt! {
+            let mut heap = TimerHeap::new();
+            let deadline = Instant::now() + Duration::from_secs(5);
+
+            let h1 = heap.push(deadline, Waker::noop().clone());
+            let h2 = heap.push(deadline, Waker::noop().clone());
+
+            assert_eq!(heap.len(), 2);
+            assert!(!heap.is_empty());
+            assert_ne!(h1, h2);
+
+            assert_eq!(heap.peek().unwrap().deadline, deadline);
+
+            let entry1 = heap.pop().unwrap();
+            assert_eq!(entry1.deadline, deadline);
+
+            let entry2 = heap.pop().unwrap();
+            assert_eq!(entry2.deadline, deadline);
+
+            assert_eq!(heap.len(), 0);
+            assert!(heap.is_empty());
+            assert_eq!(heap.peek(), None);
+        }
+    }
+
+    #[test]
+    fn test_update_earlier() {
+        rt! {
+            let mut heap = TimerHeap::new();
+            let now = Instant::now();
+
+            let deadlines = [
+                now + Duration::from_secs(10),
+                now + Duration::from_secs(5),
+            ];
+
+            let h1 = heap.push(deadlines[0], Waker::noop().clone());
+            let _h2 = heap.push(deadlines[1], Waker::noop().clone());
+
+            assert_eq!(heap.len(), deadlines.len());
+            assert_eq!(heap.peek().unwrap().deadline, deadlines[1]);
+
+            let new_deadline = Instant::now() + Duration::from_secs(2);
+            assert!(heap.update_priority(&h1, new_deadline));
+
+            assert_eq!(heap.len(), deadlines.len());
+            assert_eq!(heap.peek().unwrap().deadline, new_deadline);
+        }
+    }
+
+    #[test]
+    fn test_update_later() {
+        rt! {
+            let mut heap = TimerHeap::new();
+            let now = Instant::now();
+
+            let deadlines = [
+                now + Duration::from_secs(5),
+                now + Duration::from_secs(7),
+            ];
+
+            let h1 = heap.push(deadlines[0], Waker::noop().clone());
+            let _h2 = heap.push(deadlines[1], Waker::noop().clone());
+
+            assert_eq!(heap.len(), deadlines.len());
+            assert_eq!(heap.peek().unwrap().deadline, deadlines[0]);
+
+            let new_deadline = Instant::now() + Duration::from_secs(10);
+            assert!(heap.update_priority(&h1, new_deadline));
+
+            assert_eq!(heap.len(), deadlines.len());
+            assert_eq!(heap.peek().unwrap().deadline, deadlines[1]);
+        }
+    }
+
+    #[test]
+    fn test_remove_all() {
+        rt! {
+            let mut heap = TimerHeap::new();
+            let now = Instant::now();
+
+            let deadlines = [
+                now + Duration::from_secs(5),
+                now + Duration::from_secs(7),
+                now + Duration::from_secs(10),
+            ];
+
+            let h1 = heap.push(deadlines[0], Waker::noop().clone());
+            let h2 = heap.push(deadlines[1], Waker::noop().clone());
+            let h3 = heap.push(deadlines[2], Waker::noop().clone());
+
+            assert_eq!(heap.len(), deadlines.len());
+            assert_eq!(heap.peek().unwrap().deadline, deadlines[0]);
+
+            assert!(heap.remove(&h2).is_some());
+            assert_eq!(heap.len(), 2);
+            assert_eq!(heap.peek().unwrap().deadline, deadlines[0]);
+
+            assert!(heap.remove(&h1).is_some());
+            assert_eq!(heap.len(), 1);
+            assert_eq!(heap.peek().unwrap().deadline, deadlines[2]);
+
+            assert!(heap.remove(&h3).is_some());
+            assert_eq!(heap.len(), 0);
+            assert!(heap.is_empty());
+            assert_eq!(heap.peek(), None);
+        }
+    }
+
+    #[test]
+    fn test_remove_invalid() {
+        rt! {
+            let mut heap = TimerHeap::new();
+            let h1 = heap.push(Instant::now(), Waker::noop().clone());
+
+            assert!(heap.remove(&h1).is_some());
+            assert!(heap.remove(&h1).is_none());
+        }
+    }
+
+    #[test]
+    fn test_remove_middle() {
+        rt! {
+            let mut heap = TimerHeap::new();
+            let now = Instant::now();
+
+            let deadlines = [
+                now + Duration::from_secs(1),
+                now + Duration::from_secs(5),
+                now + Duration::from_secs(10),
+            ];
+
+            let handles: Vec<_> = deadlines
+                .iter()
+                .map(|d| heap.push(*d, Waker::noop().clone()))
+                .collect();
+
+            assert_eq!(heap.len(), 3);
+            assert_eq!(heap.peek().unwrap().deadline, deadlines[0]);
+
+            assert!(heap.remove(&handles[1]).is_some());
+            assert_eq!(heap.len(), 2);
+
+            assert_eq!(heap.pop().unwrap().deadline, deadlines[0]);
+            assert_eq!(heap.pop().unwrap().deadline, deadlines[2]);
+            assert!(heap.pop().is_none());
+
+            for handle in handles.iter() {
+                assert!(heap.remove(handle).is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn test_remove_root_then_pop() {
+        rt! {
+            let mut heap = TimerHeap::new();
+            let now = Instant::now();
+
+            let h1 = heap.push(now + Duration::from_secs(1), Waker::noop().clone());
+            let _h2 = heap.push(now + Duration::from_secs(2), Waker::noop().clone());
+            let _h3 = heap.push(now + Duration::from_secs(3), Waker::noop().clone());
+
+            assert!(heap.remove(&h1).is_some());
+            assert_eq!(heap.len(), 2);
+
+            assert_eq!(heap.pop().unwrap().deadline, now + Duration::from_secs(2));
+            assert_eq!(heap.pop().unwrap().deadline, now + Duration::from_secs(3));
+
+            assert_eq!(heap.len(), 0);
+            assert!(heap.is_empty());
+            assert_eq!(heap.peek(), None);
+        }
+    }
+
+    #[test]
+    fn test_remove_last() {
+        rt! {
+            let mut heap = TimerHeap::new();
+            let now = Instant::now();
+
+            let _h1 = heap.push(now + Duration::from_secs(1), Waker::noop().clone());
+            let _h2 = heap.push(now + Duration::from_secs(2), Waker::noop().clone());
+            let h3 = heap.push(now + Duration::from_secs(3), Waker::noop().clone());
+
+            assert!(heap.remove(&h3).is_some());
+            assert_eq!(heap.len(), 2);
+
+            assert_eq!(heap.pop().unwrap().deadline, now + Duration::from_secs(1));
+            assert_eq!(heap.pop().unwrap().deadline, now + Duration::from_secs(2));
+
+            assert_eq!(heap.len(), 0);
+            assert!(heap.is_empty());
+            assert_eq!(heap.peek(), None);
+        }
+    }
+
+    #[test]
+    fn test_pop_expiration_order() {
+        rt! {
+            let mut heap = TimerHeap::new();
+            let now = Instant::now();
+
+            let deadlines = [
+                now + Duration::from_secs(5),
+                now + Duration::from_secs(1),
+                now + Duration::from_secs(3),
+                now + Duration::from_secs(2),
+            ];
+
+            for deadline in deadlines {
+                heap.push(deadline, Waker::noop().clone().clone());
+            }
+
+            assert_eq!(heap.pop().unwrap().deadline, deadlines[1]);
+            assert_eq!(heap.pop().unwrap().deadline, deadlines[3]);
+            assert_eq!(heap.pop().unwrap().deadline, deadlines[2]);
+            assert_eq!(heap.pop().unwrap().deadline, deadlines[0]);
+
+            assert_eq!(heap.len(), 0);
+            assert!(heap.is_empty());
+            assert_eq!(heap.peek(), None);
+        }
+    }
+
+    #[test]
+    fn test_heap_iter_basic() {
+        rt! {
+            let mut heap = TimerHeap::new();
+            let now = Instant::now();
+
+            let deadlines = [
+                now + Duration::from_secs(1),
+                now + Duration::from_secs(3),
+                now + Duration::from_secs(2),
+            ];
+
+            for deadline in deadlines {
+                heap.push(deadline, Waker::noop().clone());
+            }
+
+            let mut iter = heap.heap_iter();
+
+            assert_eq!(iter.next_entry().unwrap().deadline, deadlines[0]);
+            assert_eq!(iter.next_entry().unwrap().deadline, deadlines[2]);
+            assert_eq!(iter.next_entry().unwrap().deadline, deadlines[1]);
+            assert!(iter.next_entry().is_none());
+
+            drop(iter);
+
+            assert_eq!(heap.len(), 3);
+            assert!(!heap.is_empty());
+            assert_eq!(heap.peek().unwrap().deadline, deadlines[0]);
+        }
+    }
+
+    #[test]
+    fn test_heap_iter_partial_drop() {
+        rt! {
+            let mut heap = TimerHeap::new();
+            let deadline1 = Instant::now() + Duration::from_secs(5);
+            let deadline2 = Instant::now() + Duration::from_secs(10);
+
+            heap.push(deadline1, Waker::noop().clone());
+            heap.push(deadline2, Waker::noop().clone());
+
+            assert_eq!(heap.len(), 2);
+            assert!(!heap.is_empty());
+            assert_eq!(heap.peek().unwrap().deadline, deadline1);
+
+            let mut heap_clone = heap.clone();
+
+            {
+                let mut iter = heap.heap_iter();
+                assert_eq!(iter.next_entry().unwrap().deadline, deadline1);
+            }
+
+            assert_eq!(heap.len(), 2);
+            assert!(!heap.is_empty());
+            assert_eq!(heap.peek().unwrap().deadline, deadline1);
+
+            for _ in 0..heap.len() {
+                assert_eq!(heap.pop(), heap_clone.pop());
+            }
+        }
+    }
+
+    #[test]
+    fn test_heap_iter_full_drop() {
+        rt! {
+            let mut heap = TimerHeap::new();
+            let now = Instant::now();
+
+            let deadlines = [
+                now + Duration::from_secs(1),
+                now + Duration::from_secs(3),
+                now + Duration::from_secs(2),
+            ];
+
+            for deadline in deadlines {
+                heap.push(deadline, Waker::noop().clone());
+            }
+
+            assert_eq!(heap.len(), 3);
+            assert!(!heap.is_empty());
+            assert_eq!(heap.peek().unwrap().deadline, deadlines[0]);
+
+            let mut heap_clone = heap.clone();
+
+            {
+                let mut iter = heap.heap_iter();
+                while iter.next_entry().is_some() {}
+            }
+
+            assert_eq!(heap.len(), 3);
+            assert!(!heap.is_empty());
+            assert_eq!(heap.peek().unwrap().deadline, deadlines[0]);
+
+            for _ in 0..heap.len() {
+                assert_eq!(heap.pop(), heap_clone.pop());
+            }
+        }
+    }
+
+    #[test]
+    fn test_heap_iter_empty() {
+        rt! {
+            let mut heap = TimerHeap::new();
+            let mut iter = heap.heap_iter();
+            assert!(iter.next_entry().is_none());
+            drop(iter);
+            assert_eq!(heap.len(), 0);
         }
     }
 }

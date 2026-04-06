@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use crate::rt::time::RawHandle;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TimerEntry {
     pub deadline: Instant,
     pub waker: Waker,

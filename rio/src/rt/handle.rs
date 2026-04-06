@@ -8,7 +8,7 @@ cfg_time! {
     use std::task::Waker;
     use std::time::{Duration, Instant};
 
-    use crate::rt::time::{self, TimerHandle, RawHandle};
+    use crate::rt::time::{self, TimerHandle};
 }
 
 /// Runtime context guard.
@@ -104,12 +104,12 @@ cfg_time! {
             self.time.register_timer(deadline, waker)
         }
 
-        pub fn update_timer(&self, raw_handle: RawHandle, deadline: Instant) -> bool {
-            self.time.update_timer(raw_handle, deadline)
+        pub fn update_timer(&self, handle: &TimerHandle, deadline: Instant) -> bool {
+            self.time.update_timer(handle, deadline)
         }
 
-        pub fn cancel_timer(&self, raw_handle: RawHandle) {
-            self.time.cancel_timer(raw_handle);
+        pub fn cancel_timer(&self, handle: &TimerHandle) {
+            self.time.cancel_timer(handle);
         }
     }
 }

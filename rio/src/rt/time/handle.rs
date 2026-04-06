@@ -17,7 +17,7 @@ pub struct RawHandle(u64);
 /// Cancels the associated timer entry on `Drop`.
 ///
 /// [`TimerHeap::push`]: crate::rt::time::TimerHeap::push
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct TimerHandle(RawHandle);
 
 impl TimerHandle {
@@ -32,7 +32,7 @@ impl TimerHandle {
     }
 
     fn cancel(&self) {
-        context::with_handle(|handle| handle.cancel_timer(self.raw()));
+        context::with_handle(|handle| handle.cancel_timer(self));
     }
 }
 

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::task::Waker;
 use std::time::{Duration, Instant};
 
-use crate::rt::time::{RawHandle, TimerHandle, TimerHeap};
+use crate::rt::time::{TimerHandle, TimerHeap};
 
 /// Driver for managing asynchronous delays and time-based events within the
 /// runtime.
@@ -29,15 +29,13 @@ impl Driver {
 
     /// Attempts to update the `deadline` of the timer identified by
     /// `raw_handle`, returning `true` if successful.
-    pub fn update_timer(&self, raw_handle: RawHandle, deadline: Instant) -> bool {
-        self.timers
-            .borrow_mut()
-            .update_priority(raw_handle, deadline)
+    pub fn update_timer(&self, handle: &TimerHandle, deadline: Instant) -> bool {
+        self.timers.borrow_mut().update_priority(handle, deadline)
     }
 
     /// Cancels the timer identified by `raw_handle`, ensuring it does not fire.
-    pub fn cancel_timer(&self, raw_handle: RawHandle) {
-        self.timers.borrow_mut().remove(raw_handle);
+    pub fn cancel_timer(&self, handle: &TimerHandle) {
+        self.timers.borrow_mut().remove(handle);
     }
 
     /// Drives the timers registered with the driver, returning a timeout
