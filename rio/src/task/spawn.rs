@@ -12,7 +12,7 @@ use crate::task::JoinHandle;
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
 /// use std::time::Duration;

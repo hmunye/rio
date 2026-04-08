@@ -65,7 +65,7 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           components: clippy
       - name: cargo clippy
-        run: cargo clippy --features=full
+        run: cargo clippy --all-targets
   doc:
     # Run docs generation on nightly rather than stable. This enables features 
     # like:

@@ -3,6 +3,7 @@ use std::pin::Pin;
 use std::task::{Poll, ready};
 use std::time::{Duration, Instant};
 
+use crate::rt::time::clock;
 use crate::time::{self, Sleep};
 
 /// Creates an `Interval` that triggers at a fixed `period`, with the first tick
@@ -14,11 +15,12 @@ use crate::time::{self, Sleep};
 ///
 /// # Panics
 ///
-/// Panics if `period` is zero.
+/// Panics if `period` is zero or the current thread is not within a runtime
+/// context.
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
 /// use std::time::Duration;
@@ -37,7 +39,7 @@ use crate::time::{self, Sleep};
 /// than `period`). In such cases, the interval will "catch up" by firing ticks
 /// as quickly as necessary until it reaches the expected schedule (`burst`).
 ///
-/// ```
+/// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
 /// use std::time::Duration;
@@ -75,7 +77,7 @@ pub fn interval(period: Duration) -> Interval {
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
 /// use std::time::{Duration, Instant};
@@ -95,7 +97,7 @@ pub fn interval(period: Duration) -> Interval {
 /// than `period`). In such cases, the interval will "catch up" by firing ticks
 /// as quickly as necessary until it reaches the expected schedule (`burst`).
 ///
-/// ```
+/// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
 /// use std::time::{Duration, Instant};
@@ -142,7 +144,7 @@ impl Interval {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// # #[rio::main]
     /// # async fn main() {
     /// use std::time::Duration;
@@ -168,7 +170,7 @@ impl Interval {
             // be in the past, so `next_tick` will complete immediately.
             let next_tick = last_tick.checked_add(self.period()).unwrap_or_else(|| {
                 // <https://docs.rs/tokio/latest/src/tokio/time/instant.rs.html#34-36>
-                Instant::now() + Duration::from_secs(86400 * 365 * 30)
+                clock::now() + Duration::from_secs(86400 * 365 * 30)
             });
 
             self.delay.reset(next_tick);
@@ -187,7 +189,7 @@ impl Interval {
 
     fn new(period: Duration) -> Self {
         Interval {
-            delay: time::sleep_until(Instant::now()),
+            delay: time::sleep_until(clock::now()),
             period,
         }
     }

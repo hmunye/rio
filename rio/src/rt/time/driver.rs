@@ -2,13 +2,14 @@ use std::cell::RefCell;
 use std::task::Waker;
 use std::time::{Duration, Instant};
 
-use crate::rt::time::{TimerHandle, TimerHeap};
+use crate::rt::time::{Clock, TimerHandle, TimerHeap};
 
 /// Driver for managing asynchronous delays and time-based events within the
 /// runtime.
 #[derive(Debug)]
 pub struct Driver {
     timers: RefCell<TimerHeap>,
+    clock: Clock,
 }
 
 impl Driver {
@@ -16,6 +17,7 @@ impl Driver {
     pub fn new() -> Self {
         Driver {
             timers: RefCell::default(),
+            clock: Clock::new(),
         }
     }
 
@@ -61,7 +63,7 @@ impl Driver {
         }
 
         let mut timeout = None;
-        let now = Instant::now();
+        let now = self.clock.now();
 
         let mut iter = timers.heap_iter();
 
@@ -79,5 +81,14 @@ impl Driver {
         }
 
         timeout
+    }
+}
+
+cfg_test! {
+    impl Driver {
+        /// Returns a reference to the time abstraction source used by the driver.
+        pub const fn clock(&self) -> &Clock {
+            &self.clock
+        }
     }
 }

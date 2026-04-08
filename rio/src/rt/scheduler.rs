@@ -214,7 +214,7 @@ cfg_time! {
 
         fn try_park(&self, timeout: Duration) {
             if self.is_idle() {
-                println!("[[parking thread until next timer deadline]]");
+                // println!("[[parking thread until next timer deadline]]");
                 thread::park_timeout(timeout);
             }
         }

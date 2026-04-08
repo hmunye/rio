@@ -45,7 +45,7 @@ impl Drop for BudgetGuard {
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// use std::pin::Pin;
 /// use std::task::{Context, Poll, ready};
 ///

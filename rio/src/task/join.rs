@@ -246,6 +246,45 @@ impl<T> JoinHandle<T> {
             self.state.set_stage(TaskStage::Canceled);
         }
     }
+
+    /// Returns `true` if the task associated with this `JoinHandle` has
+    /// finished.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # #[rio::main()]
+    /// # async fn main() {
+    /// use std::time::Duration;
+    ///
+    /// let handle1 = rio::spawn(async {
+    ///     // ...
+    /// });
+    ///
+    /// let handle2 = rio::spawn(async {
+    ///     // ...
+    ///     rio::time::sleep(Duration::from_secs(1000)).await;
+    /// });
+    ///
+    /// handle2.cancel();
+    ///
+    /// rio::time::sleep(Duration::from_millis(100)).await;
+    ///
+    /// assert!(handle1.is_finished());
+    /// assert!(handle2.is_finished());
+    /// # }
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        debug_assert!(
+            !self.state.is_detached(),
+            "`JoinHandle` must not exist for detached task #{}",
+            self.id()
+        );
+
+        !self.state.is_incomplete()
+    }
 }
 
 impl<T: 'static> JoinHandle<T> {

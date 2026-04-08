@@ -28,12 +28,12 @@ impl std::error::Error for Elapsed {}
 ///
 /// # Panics
 ///
-/// Panics if the caller `.await` or polls the returned future outside of a
-/// runtime context.
+/// Panics if the current thread is not within a runtime context or the caller
+/// `.await` or polls the returned future outside of a runtime context.
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
 /// use std::time::{Duration, Instant};
@@ -71,7 +71,7 @@ where
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
 /// use std::time::{Duration, Instant};

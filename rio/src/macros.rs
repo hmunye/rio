@@ -39,6 +39,24 @@ macro_rules! cfg_not_time {
     }
 }
 
+macro_rules! cfg_test {
+    ($($item:item)*) => {
+        $(
+            #[cfg(test)]
+            $item
+        )*
+    }
+}
+
+macro_rules! cfg_not_test {
+    ($($item:item)*) => {
+        $(
+            #[cfg(not(test))]
+            $item
+        )*
+    }
+}
+
 /// Helper macro used to execute asynchronous code within a synchronous runtime
 /// entry point, specifically for unit tests.
 macro_rules! rt {
@@ -48,6 +66,6 @@ macro_rules! rt {
             $(
                 $tt
             )*
-        });
+        })
     };
 }

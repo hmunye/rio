@@ -343,7 +343,7 @@ mod tests {
     use super::*;
 
     use std::task::Waker;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     // NOTE: Tests are wrapped in `rt!` macro since `TimerHandle::Drop` relies
     // on a runtime context to cancel associated timers. We create a separate
@@ -443,8 +443,8 @@ mod tests {
 
             deadlines.sort();
 
-            for i in 0..deadlines.len() {
-                assert_eq!(heap.pop().unwrap().deadline, deadlines[i]);
+            for deadline in deadlines {
+                assert_eq!(heap.pop().unwrap().deadline, deadline);
             }
 
             assert_eq!(heap.len(), 0);
@@ -602,7 +602,7 @@ mod tests {
             assert_eq!(heap.pop().unwrap().deadline, deadlines[2]);
             assert!(heap.pop().is_none());
 
-            for handle in handles.iter() {
+            for handle in &handles {
                 assert!(heap.remove(handle).is_none());
             }
         }

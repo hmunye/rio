@@ -9,6 +9,10 @@ cfg_time! {
     use std::time::{Duration, Instant};
 
     use crate::rt::time::{self, TimerHandle};
+
+    cfg_test! {
+        use crate::rt::time::Clock;
+    }
 }
 
 /// Runtime context guard.
@@ -110,6 +114,15 @@ cfg_time! {
 
         pub fn cancel_timer(&self, handle: &TimerHandle) {
             self.time.cancel_timer(handle);
+        }
+
+    }
+
+    cfg_test! {
+        impl Handle {
+            pub fn clock(&self) -> &Clock {
+                self.time.clock()
+            }
         }
     }
 }
