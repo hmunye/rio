@@ -25,10 +25,9 @@
 //!
 //! [yielding]: crate::task::yield_now
 
-// TODO: Add unit tests.
 // TODO: Add runtime shutdown.
 
-// #![deny(clippy::unwrap_used)]
+#![deny(clippy::unwrap_used)]
 #![warn(clippy::pedantic)]
 #![warn(clippy::nursery)]
 #![warn(rust_2018_idioms)]
@@ -42,7 +41,7 @@
 #![allow(clippy::option_if_let_else)]
 #![allow(clippy::unused_self)]
 
-// NOTE: Must be defined first!
+// Must be defined first!
 #[macro_use]
 pub(crate) mod macros;
 

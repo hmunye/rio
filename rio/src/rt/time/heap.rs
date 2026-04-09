@@ -18,7 +18,7 @@ pub struct TimerHeap {
     buf: Vec<TimerEntry>,
 }
 
-/// Iterator that yields references over the entries of a `TimerHeap` in
+/// Iterator that yields mutable references over the entries of a `TimerHeap` in
 /// heap-order, restoring its prior state on `Drop`.
 #[derive(Debug)]
 pub struct HeapIter<'a> {
@@ -28,7 +28,7 @@ pub struct HeapIter<'a> {
 
 impl HeapIter<'_> {
     #[must_use]
-    pub fn next_entry(&mut self) -> Option<&TimerEntry> {
+    pub fn next_entry(&mut self) -> Option<&mut TimerEntry> {
         if self.curr >= self.heap.len() {
             return None;
         }
@@ -39,7 +39,7 @@ impl HeapIter<'_> {
         self.heap.buf.swap(0, tail);
         self.heap.sift_down(0, tail);
 
-        Some(&self.heap.buf[tail])
+        Some(&mut self.heap.buf[tail])
     }
 }
 
@@ -72,9 +72,9 @@ struct SiftInfo(u64);
 impl SiftInfo {
     #[inline]
     const fn new(pos: usize, should_sift_up: bool) -> Self {
-        // NOTE: Rust collections limits allocations to [`isize::MAX`], which
-        // fits within the lower 63 bits of a `u64`, meaning all `pos` values
-        // can be correctly encoded.
+        // Rust collections limits allocations to [`isize::MAX`], which fits
+        // within the lower 63 bits of a `u64`, meaning all `pos` values can be
+        // correctly encoded.
         let packed = (pos as u64) | ((should_sift_up as u64) << 63);
 
         SiftInfo(packed)
@@ -141,11 +141,10 @@ impl TimerHeap {
 
         // Appending maintains the invariant of a complete binary tree: every
         // level, except possibly the last, is fully filled.
-        guard.heap.buf.push(TimerEntry {
-            deadline,
-            waker,
-            raw_handle: handle.raw(),
-        });
+        guard
+            .heap
+            .buf
+            .push(TimerEntry::new(deadline, waker, handle.raw()));
 
         handle
 
@@ -163,7 +162,6 @@ impl TimerHeap {
                 heap: self,
             };
 
-            // NOTE: O(1) time, instead of `remove(0)` which is O(n).
             let timer = guard.heap.buf.swap_remove(0);
 
             guard.heap.handles.remove(&timer.raw_handle);
@@ -174,6 +172,7 @@ impl TimerHeap {
         }
     }
 
+    #[allow(unused)]
     pub fn update_priority(&mut self, handle: &TimerHandle, deadline: Instant) -> bool {
         if let Some(&idx) = self.handles.get(&handle.raw()) {
             let timer = &mut self.buf[idx];
@@ -196,9 +195,29 @@ impl TimerHeap {
         false
     }
 
+    /// # Panics
+    ///
+    /// Panics if `idx >= len`.
+    pub fn update_priority_with_idx(&mut self, idx: usize, deadline: Instant) -> bool {
+        let timer = &mut self.buf[idx];
+
+        match timer.deadline.cmp(&deadline) {
+            Ordering::Less => {
+                timer.deadline = deadline;
+                self.sift_down(idx, self.len());
+                true
+            }
+            Ordering::Equal => false,
+            Ordering::Greater => {
+                timer.deadline = deadline;
+                self.sift_up(0, idx);
+                true
+            }
+        }
+    }
+
     pub fn remove(&mut self, handle: &TimerHandle) -> Option<TimerEntry> {
         if let Some(idx) = self.handles.remove(&handle.raw()) {
-            // NOTE: O(1) time, instead of `remove(idx)` which is O(n).
             let timer = self.buf.swap_remove(idx);
 
             if !self.is_empty() {
@@ -216,6 +235,14 @@ impl TimerHeap {
             heap: self,
             curr: 0,
         }
+    }
+
+    pub fn get_mut(&mut self, handle: &TimerHandle) -> Option<(&mut TimerEntry, usize)> {
+        if let Some(&idx) = self.handles.get(&handle.raw()) {
+            return Some((&mut self.buf[idx], idx));
+        }
+
+        None
     }
 
     #[allow(unused)]
@@ -369,7 +396,7 @@ mod tests {
 
             assert_eq!(heap.len(), 1);
             assert!(!heap.is_empty());
-            assert_eq!(heap.peek().unwrap().deadline, deadline1);
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, deadline1);
         }
     }
 
@@ -383,13 +410,13 @@ mod tests {
 
             assert_eq!(heap.len(), 1);
             assert!(!heap.is_empty());
-            assert_eq!(heap.peek().unwrap().deadline, deadline1);
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, deadline1);
 
             let popped = heap.pop();
 
             assert_eq!(heap.len(), 0);
             assert!(heap.is_empty());
-            assert_eq!(popped.unwrap().deadline, deadline1);
+            assert_eq!(popped.expect("heap should be non-empty").deadline, deadline1);
             assert_eq!(heap.peek(), None);
         }
     }
@@ -415,7 +442,7 @@ mod tests {
 
             assert_eq!(heap.len(), deadlines.len());
             assert!(!heap.is_empty());
-            assert_eq!(heap.peek().unwrap().deadline, *deadlines.last().unwrap());
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, *deadlines.last().expect("heap should be non-empty"));
         }
     }
 
@@ -444,7 +471,7 @@ mod tests {
             deadlines.sort();
 
             for deadline in deadlines {
-                assert_eq!(heap.pop().unwrap().deadline, deadline);
+                assert_eq!(heap.pop().expect("heap should be non-empty").deadline, deadline);
             }
 
             assert_eq!(heap.len(), 0);
@@ -466,12 +493,12 @@ mod tests {
             assert!(!heap.is_empty());
             assert_ne!(h1, h2);
 
-            assert_eq!(heap.peek().unwrap().deadline, deadline);
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, deadline);
 
-            let entry1 = heap.pop().unwrap();
+            let entry1 = heap.pop().expect("heap should be non-empty");
             assert_eq!(entry1.deadline, deadline);
 
-            let entry2 = heap.pop().unwrap();
+            let entry2 = heap.pop().expect("heap should be non-empty");
             assert_eq!(entry2.deadline, deadline);
 
             assert_eq!(heap.len(), 0);
@@ -495,13 +522,13 @@ mod tests {
             let _h2 = heap.push(deadlines[1], Waker::noop().clone());
 
             assert_eq!(heap.len(), deadlines.len());
-            assert_eq!(heap.peek().unwrap().deadline, deadlines[1]);
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, deadlines[1]);
 
             let new_deadline = Instant::now() + Duration::from_secs(2);
             assert!(heap.update_priority(&h1, new_deadline));
 
             assert_eq!(heap.len(), deadlines.len());
-            assert_eq!(heap.peek().unwrap().deadline, new_deadline);
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, new_deadline);
         }
     }
 
@@ -520,13 +547,13 @@ mod tests {
             let _h2 = heap.push(deadlines[1], Waker::noop().clone());
 
             assert_eq!(heap.len(), deadlines.len());
-            assert_eq!(heap.peek().unwrap().deadline, deadlines[0]);
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, deadlines[0]);
 
             let new_deadline = Instant::now() + Duration::from_secs(10);
             assert!(heap.update_priority(&h1, new_deadline));
 
             assert_eq!(heap.len(), deadlines.len());
-            assert_eq!(heap.peek().unwrap().deadline, deadlines[1]);
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, deadlines[1]);
         }
     }
 
@@ -547,15 +574,15 @@ mod tests {
             let h3 = heap.push(deadlines[2], Waker::noop().clone());
 
             assert_eq!(heap.len(), deadlines.len());
-            assert_eq!(heap.peek().unwrap().deadline, deadlines[0]);
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, deadlines[0]);
 
             assert!(heap.remove(&h2).is_some());
             assert_eq!(heap.len(), 2);
-            assert_eq!(heap.peek().unwrap().deadline, deadlines[0]);
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, deadlines[0]);
 
             assert!(heap.remove(&h1).is_some());
             assert_eq!(heap.len(), 1);
-            assert_eq!(heap.peek().unwrap().deadline, deadlines[2]);
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, deadlines[2]);
 
             assert!(heap.remove(&h3).is_some());
             assert_eq!(heap.len(), 0);
@@ -593,13 +620,13 @@ mod tests {
                 .collect();
 
             assert_eq!(heap.len(), 3);
-            assert_eq!(heap.peek().unwrap().deadline, deadlines[0]);
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, deadlines[0]);
 
             assert!(heap.remove(&handles[1]).is_some());
             assert_eq!(heap.len(), 2);
 
-            assert_eq!(heap.pop().unwrap().deadline, deadlines[0]);
-            assert_eq!(heap.pop().unwrap().deadline, deadlines[2]);
+            assert_eq!(heap.pop().expect("heap should be non-empty").deadline, deadlines[0]);
+            assert_eq!(heap.pop().expect("heap should be non-empty").deadline, deadlines[2]);
             assert!(heap.pop().is_none());
 
             for handle in &handles {
@@ -621,8 +648,8 @@ mod tests {
             assert!(heap.remove(&h1).is_some());
             assert_eq!(heap.len(), 2);
 
-            assert_eq!(heap.pop().unwrap().deadline, now + Duration::from_secs(2));
-            assert_eq!(heap.pop().unwrap().deadline, now + Duration::from_secs(3));
+            assert_eq!(heap.pop().expect("heap should be non-empty").deadline, now + Duration::from_secs(2));
+            assert_eq!(heap.pop().expect("heap should be non-empty").deadline, now + Duration::from_secs(3));
 
             assert_eq!(heap.len(), 0);
             assert!(heap.is_empty());
@@ -643,8 +670,8 @@ mod tests {
             assert!(heap.remove(&h3).is_some());
             assert_eq!(heap.len(), 2);
 
-            assert_eq!(heap.pop().unwrap().deadline, now + Duration::from_secs(1));
-            assert_eq!(heap.pop().unwrap().deadline, now + Duration::from_secs(2));
+            assert_eq!(heap.pop().expect("heap should be non-empty").deadline, now + Duration::from_secs(1));
+            assert_eq!(heap.pop().expect("heap should be non-empty").deadline, now + Duration::from_secs(2));
 
             assert_eq!(heap.len(), 0);
             assert!(heap.is_empty());
@@ -669,10 +696,10 @@ mod tests {
                 heap.push(deadline, Waker::noop().clone().clone());
             }
 
-            assert_eq!(heap.pop().unwrap().deadline, deadlines[1]);
-            assert_eq!(heap.pop().unwrap().deadline, deadlines[3]);
-            assert_eq!(heap.pop().unwrap().deadline, deadlines[2]);
-            assert_eq!(heap.pop().unwrap().deadline, deadlines[0]);
+            assert_eq!(heap.pop().expect("heap should be non-empty").deadline, deadlines[1]);
+            assert_eq!(heap.pop().expect("heap should be non-empty").deadline, deadlines[3]);
+            assert_eq!(heap.pop().expect("heap should be non-empty").deadline, deadlines[2]);
+            assert_eq!(heap.pop().expect("heap should be non-empty").deadline, deadlines[0]);
 
             assert_eq!(heap.len(), 0);
             assert!(heap.is_empty());
@@ -698,16 +725,16 @@ mod tests {
 
             let mut iter = heap.heap_iter();
 
-            assert_eq!(iter.next_entry().unwrap().deadline, deadlines[0]);
-            assert_eq!(iter.next_entry().unwrap().deadline, deadlines[2]);
-            assert_eq!(iter.next_entry().unwrap().deadline, deadlines[1]);
+            assert_eq!(iter.next_entry().expect("heap should be non-empty").deadline, deadlines[0]);
+            assert_eq!(iter.next_entry().expect("heap should be non-empty").deadline, deadlines[2]);
+            assert_eq!(iter.next_entry().expect("heap should be non-empty").deadline, deadlines[1]);
             assert!(iter.next_entry().is_none());
 
             drop(iter);
 
             assert_eq!(heap.len(), 3);
             assert!(!heap.is_empty());
-            assert_eq!(heap.peek().unwrap().deadline, deadlines[0]);
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, deadlines[0]);
         }
     }
 
@@ -723,18 +750,18 @@ mod tests {
 
             assert_eq!(heap.len(), 2);
             assert!(!heap.is_empty());
-            assert_eq!(heap.peek().unwrap().deadline, deadline1);
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, deadline1);
 
             let mut heap_clone = heap.clone();
 
             {
                 let mut iter = heap.heap_iter();
-                assert_eq!(iter.next_entry().unwrap().deadline, deadline1);
+                assert_eq!(iter.next_entry().expect("heap should be non-empty").deadline, deadline1);
             }
 
             assert_eq!(heap.len(), 2);
             assert!(!heap.is_empty());
-            assert_eq!(heap.peek().unwrap().deadline, deadline1);
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, deadline1);
 
             for _ in 0..heap.len() {
                 assert_eq!(heap.pop(), heap_clone.pop());
@@ -760,7 +787,7 @@ mod tests {
 
             assert_eq!(heap.len(), 3);
             assert!(!heap.is_empty());
-            assert_eq!(heap.peek().unwrap().deadline, deadlines[0]);
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, deadlines[0]);
 
             let mut heap_clone = heap.clone();
 
@@ -771,7 +798,7 @@ mod tests {
 
             assert_eq!(heap.len(), 3);
             assert!(!heap.is_empty());
-            assert_eq!(heap.peek().unwrap().deadline, deadlines[0]);
+            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, deadlines[0]);
 
             for _ in 0..heap.len() {
                 assert_eq!(heap.pop(), heap_clone.pop());

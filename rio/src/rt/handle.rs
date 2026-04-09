@@ -123,6 +123,10 @@ cfg_time! {
             pub fn clock(&self) -> &Clock {
                 self.time.clock()
             }
+
+            pub fn timers(&self) -> usize {
+                self.time.timers()
+            }
         }
     }
 }

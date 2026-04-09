@@ -29,13 +29,20 @@ impl Driver {
         self.timers.borrow_mut().push(deadline, waker)
     }
 
-    /// Attempts to update the `deadline` of the timer identified by
-    /// `raw_handle`, returning `true` if successful.
+    /// Attempts to update the `deadline` of the timer identified by `handle`,
+    /// returning `true` if successful.
     pub fn update_timer(&self, handle: &TimerHandle, deadline: Instant) -> bool {
-        self.timers.borrow_mut().update_priority(handle, deadline)
+        let mut timers = self.timers.borrow_mut();
+
+        if let Some((entry, idx)) = timers.get_mut(handle) {
+            entry.mark_pending();
+            timers.update_priority_with_idx(idx, deadline)
+        } else {
+            false
+        }
     }
 
-    /// Cancels the timer identified by `raw_handle`, ensuring it does not fire.
+    /// Cancels the timer identified by `handle`, removing it from the driver.
     pub fn cancel_timer(&self, handle: &TimerHandle) {
         self.timers.borrow_mut().remove(handle);
     }
@@ -68,10 +75,15 @@ impl Driver {
         let mut iter = timers.heap_iter();
 
         while let Some(entry) = iter.next_entry() {
+            if entry.is_fired() {
+                continue;
+            }
+
             let deadline = entry.deadline;
 
             if deadline <= now {
                 entry.waker.wake_by_ref();
+                entry.mark_fired();
             } else {
                 timeout = Some(deadline.duration_since(now));
                 // Since the earliest deadline in the heap hasn't elapsed, all
@@ -89,6 +101,11 @@ cfg_test! {
         /// Returns a reference to the time abstraction source used by the driver.
         pub const fn clock(&self) -> &Clock {
             &self.clock
+        }
+
+        /// Returns the number of timers registered with the driver.
+        pub fn timers(&self) -> usize {
+            self.timers.borrow().len()
         }
     }
 }

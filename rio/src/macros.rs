@@ -57,8 +57,6 @@ macro_rules! cfg_not_test {
     }
 }
 
-/// Helper macro used to execute asynchronous code within a synchronous runtime
-/// entry point, specifically for unit tests.
 macro_rules! rt {
     ($($tt:tt)*) => {
         let rt = crate::rt::Runtime::new();

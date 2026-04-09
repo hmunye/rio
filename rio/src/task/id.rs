@@ -18,13 +18,6 @@ impl Id {
     pub(crate) fn next() -> Self {
         Id(IDS.replace(IDS.get() + 1))
     }
-
-    /// Consumes `self`, returning its numeric value.
-    #[inline]
-    #[must_use]
-    pub const fn val(self) -> u64 {
-        self.0
-    }
 }
 
 impl fmt::Display for Id {

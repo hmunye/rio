@@ -8,7 +8,9 @@ use crate::task;
 /// `LocalWaker` is analogous to a [`Waker`], but does not implement [`Send`] or
 /// [`Sync`].
 ///
-// NOTE: <https://github.com/rust-lang/rust/issues/118959>
+// FIXME: Use `std::task::LocalWaker` when it is stable.
+//
+// <https://github.com/rust-lang/rust/issues/118959>
 #[derive(Debug)]
 pub struct LocalWaker {
     waker: Waker,

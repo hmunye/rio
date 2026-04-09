@@ -15,8 +15,7 @@ use crate::time::{self, Sleep};
 ///
 /// # Panics
 ///
-/// Panics if `period` is zero or the current thread is not within a runtime
-/// context.
+/// Panics if `period` is zero.
 ///
 /// # Examples
 ///
@@ -198,6 +197,157 @@ impl Interval {
         Interval {
             delay: time::sleep_until(start),
             period,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::task::Context;
+
+    use super::*;
+
+    use crate::rt::context;
+    use crate::rt::time::clock;
+
+    #[cfg(not(miri))]
+    const THRESHOLD_MS: u64 = 5;
+
+    fn rt_timer_count() -> usize {
+        #[allow(clippy::redundant_closure_for_method_calls)]
+        context::with_handle(|handle| handle.timers())
+    }
+
+    #[test]
+    fn test_interval_first_tick_is_immediate() {
+        rt! {
+            let mut interval = interval(Duration::from_millis(10));
+
+            assert_eq!(interval.tick().await, clock::now());
+            assert_eq!(rt_timer_count(), 0);
+
+            #[cfg(not(miri))]
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_interval_multiple_ticks() {
+        rt! {
+            let mut interval = interval(Duration::from_millis(10));
+
+            let t0 = interval.tick().await;
+            assert_eq!(t0, clock::now());
+
+            clock::advance(Duration::from_millis(9)).await;
+
+            let mut pending = interval.tick();
+            let mut pinned = unsafe { Pin::new_unchecked(&mut pending) };
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            assert!(pinned.as_mut().poll(&mut cx).is_pending());
+
+            clock::advance(Duration::from_millis(1)).await;
+            let t1 = pinned.as_mut().await;
+            assert_eq!(t1, t0 + Duration::from_millis(10));
+
+            drop(pending);
+
+            clock::advance(Duration::from_millis(10)).await;
+            let t2 = interval.tick().await;
+            assert_eq!(t2, t1 + Duration::from_millis(10));
+
+            #[cfg(not(miri))]
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_interval_at_start_time() {
+        rt! {
+            let start = clock::now() + Duration::from_millis(50);
+            let mut interval = interval_at(start, Duration::from_millis(10));
+
+            clock::advance(Duration::from_millis(49)).await;
+
+            let mut pending = interval.tick();
+            let mut pinned = unsafe { Pin::new_unchecked(&mut pending) };
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            assert!(pinned.as_mut().poll(&mut cx).is_pending());
+
+            clock::advance(Duration::from_millis(1)).await;
+            let t0 = pinned.as_mut().await;
+            assert_eq!(t0, start);
+
+            drop(pending);
+
+            clock::advance(Duration::from_millis(10)).await;
+            let t1 = interval.tick().await;
+            assert_eq!(t1, start + Duration::from_millis(10));
+
+            #[cfg(not(miri))]
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_interval_burst_after_delay() {
+        rt! {
+            let mut interval = interval(Duration::from_millis(50));
+
+            let start = interval.tick().await;
+            assert_eq!(start, clock::now());
+
+            clock::advance(Duration::from_millis(200)).await;
+
+            let t1 = interval.tick().await;
+            let t2 = interval.tick().await;
+            let t3 = interval.tick().await;
+            let t4 = interval.tick().await;
+
+            assert_eq!(t1, start + Duration::from_millis(50));
+            assert_eq!(t2, start + Duration::from_millis(100));
+            assert_eq!(t3, start + Duration::from_millis(150));
+            assert_eq!(t4, start + Duration::from_millis(200));
+
+            let mut pending = interval.tick();
+            let mut pinned = unsafe { Pin::new_unchecked(&mut pending) };
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            assert!(pinned.as_mut().poll(&mut cx).is_pending());
+
+            clock::advance(Duration::from_millis(50)).await;
+            let t5 = pinned.as_mut().await;
+            assert_eq!(t5, start + Duration::from_millis(250));
+
+            #[cfg(not(miri))]
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_interval_cancellation() {
+        rt! {
+            let handle = crate::spawn(async {
+                let mut interval = interval(Duration::from_millis(50));
+
+                interval.tick().await;
+
+                {
+                    let mut pending = interval.tick();
+                    let mut pinned = unsafe { Pin::new_unchecked(&mut pending) };
+                    let mut cx = Context::from_waker(std::task::Waker::noop());
+                    assert!(pinned.as_mut().poll(&mut cx).is_pending());
+                }
+
+                assert!(rt_timer_count() > 0);
+                drop(interval);
+                assert_eq!(rt_timer_count(), 0);
+            });
+
+            clock::advance(Duration::from_millis(50)).await;
+            assert!(handle.is_finished());
+
+            #[cfg(not(miri))]
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
         }
     }
 }

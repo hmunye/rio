@@ -23,10 +23,6 @@ cfg_test! {
 
     /// Advances logical time by `duration`.
     ///
-    /// Yields once before advancing so pending tasks can observe the current
-    /// time, then yields again after advancing the clock to allow the scheduler
-    /// to process given the updated clock.
-    ///
     /// # Panics
     ///
     /// Panics if the clock is not paused, if the current thread is not within
@@ -49,6 +45,7 @@ cfg_test! {
     ///
     /// Panics if the clock is not paused or if the current thread is not within
     /// a runtime context.
+    #[allow(unused)]
     pub fn resume() {
         context::with_handle(|handle| {
             let clock = handle.clock();
@@ -76,6 +73,7 @@ cfg_test! {
                 resumed_at: Cell::new(Some(now))
             };
 
+            // Always start paused.
             clock.pause();
 
             clock

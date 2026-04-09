@@ -22,14 +22,15 @@ impl std::error::Error for Elapsed {}
 ///
 /// If the provided future completes before `duration` has elapsed, its value is
 /// yielded; otherwise, an [`error`](Elapsed) is returned and the future is
-/// canceled.
+/// canceled. The `Timeout` is canceled by dropping it.
 ///
-/// The `Timeout` is canceled by dropping it.
+/// If the provided future is ready immediately, the `Timeout` is guaranteed to
+/// yield the futures value no matter the provided duration.
 ///
 /// # Panics
 ///
-/// Panics if the current thread is not within a runtime context or the caller
-/// `.await` or polls the returned future outside of a runtime context.
+/// Panics if the caller `.await` or polls the returned future outside of a
+/// runtime context.
 ///
 /// # Examples
 ///
@@ -60,9 +61,10 @@ where
 ///
 /// If the provided future completes before `deadline` is reached, its value is
 /// yielded; otherwise, an [`error`](Elapsed) is returned and the future is
-/// canceled.
+/// canceled. The `Timeout` is canceled by dropping it.
 ///
-/// The `Timeout` is canceled by dropping it.
+/// If the provided future is ready immediately, the `Timeout` is guaranteed to
+/// yield the futures value no matter the provided deadline.
 ///
 /// # Panics
 ///
@@ -166,22 +168,32 @@ fn poll_delay(budget_before: bool, delay: Pin<&mut Sleep>, cx: &mut Context<'_>)
 mod tests {
     use super::*;
 
+    use crate::rt::context;
     use crate::rt::time::clock;
 
     #[cfg(not(miri))]
     const THRESHOLD_MS: u64 = 5;
 
+    fn rt_timer_count() -> usize {
+        #[allow(clippy::redundant_closure_for_method_calls)]
+        context::with_handle(|handle| handle.timers())
+    }
+
     #[test]
-    fn test_timeout_success() {
+    fn test_timeout_expires() {
         rt! {
-            let t = timeout(Duration::from_millis(100), async {
-                42
+            let handle = crate::spawn(async {
+                let t = timeout(Duration::from_millis(100), async {
+                    std::future::pending::<()>().await;
+                });
+
+                assert!(t.await.is_err());
             });
 
             clock::advance(Duration::from_millis(100)).await;
 
-            // Inner future is polled before the timeout.
-            assert_eq!(t.await.unwrap(), 42);
+            assert!(handle.is_finished());
+            assert_eq!(rt_timer_count(), 0);
 
             #[cfg(not(miri))]
             assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
@@ -189,16 +201,41 @@ mod tests {
     }
 
     #[test]
-    fn test_timeout_at_success() {
+    fn test_timeout_cancellation() {
         rt! {
-            let t = timeout_at(clock::now() + Duration::from_millis(100), async {
-                42
+            let handle = crate::spawn(async {
+                let mut t = std::pin::pin!(timeout(Duration::from_millis(100_000), async {
+                    std::future::pending::<()>().await;
+                }));
+
+                let mut cx = Context::from_waker(std::task::Waker::noop());
+
+                assert!(t.as_mut().poll(&mut cx).is_pending());
+
+                assert!(rt_timer_count() > 0);
+                #[allow(clippy::drop_non_drop)]
+                drop(t);
+                assert_eq!(rt_timer_count(), 0);
             });
+
+            clock::advance(Duration::from_millis(50)).await;
+
+            assert!(handle.is_finished());
+
+            #[cfg(not(miri))]
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_timeout_inner_future_preempts_duration() {
+        rt! {
+            let t = timeout(Duration::ZERO, async {});
 
             clock::advance(Duration::from_millis(100)).await;
 
-            // Inner future is polled before the timeout.
-            assert_eq!(t.await.unwrap(), 42);
+            assert!(t.await.is_ok());
+            assert_eq!(rt_timer_count(), 0);
 
             #[cfg(not(miri))]
             assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
@@ -206,15 +243,19 @@ mod tests {
     }
 
     #[test]
-    fn test_timeout_expired() {
+    fn test_timeout_at_inner_future_preempts_deadline() {
         rt! {
-            let t = timeout(Duration::from_millis(100), async {
-                crate::time::sleep(Duration::from_millis(101)).await;
-                42
-            });
+            let t = timeout_at(
+                clock::now()
+                .checked_sub(Duration::from_millis(1))
+                .expect("should not underflow"),
+                async {},
+            );
 
             clock::advance(Duration::from_millis(100)).await;
-            assert!(t.await.is_err());
+
+            assert!(t.await.is_ok());
+            assert_eq!(rt_timer_count(), 0);
 
             #[cfg(not(miri))]
             assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
@@ -222,83 +263,41 @@ mod tests {
     }
 
     #[test]
-    fn test_timeout_at_expired() {
+    fn test_timeout_multiple_ordered() {
         rt! {
-            let t = timeout_at(clock::now() + Duration::from_millis(100), async {
-                crate::time::sleep(Duration::from_millis(101)).await;
-                42
+            let handle1 = crate::spawn(async {
+                timeout(Duration::from_millis(100), async {
+                    crate::time::sleep(Duration::from_millis(99)).await;
+                }).await
             });
 
-            clock::advance(Duration::from_millis(100)).await;
-            assert!(t.await.is_err());
-
-            #[cfg(not(miri))]
-            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
-        }
-    }
-
-    #[test]
-    fn test_timeout_at_past_deadline() {
-        rt! {
-            let t = timeout_at(clock::now() - Duration::from_millis(1), async {
-                crate::time::sleep(Duration::from_millis(1)).await;
-                42
+            let handle2 = crate::spawn(async {
+                timeout(Duration::from_millis(49), async {
+                    crate::time::sleep(Duration::from_millis(50)).await;
+                }).await
             });
 
-            assert!(t.await.is_err());
-
-            #[cfg(not(miri))]
-            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
-        }
-    }
-
-    #[test]
-    fn test_timeout_concurrent() {
-        rt! {
-            let t1 = timeout(Duration::from_millis(50), async {
-                crate::task::yield_now().await;
-                1
+            let handle3 = crate::spawn(async {
+                timeout(Duration::ZERO, async {
+                    crate::time::sleep(Duration::from_millis(1)).await;
+                }).await
             });
 
-            let t2 = timeout(Duration::from_millis(100), async {
-                crate::task::yield_now().await;
-                2
-            });
+            clock::advance(Duration::from_millis(10)).await;
 
-            let t3 = timeout(Duration::ZERO, async { 3 });
+            assert!(!handle1.is_finished());
+            assert!(!handle2.is_finished());
+            assert!(handle3.await.expect("task should have completed").is_err());
+            assert!(rt_timer_count() > 0);
 
-            clock::advance(Duration::from_millis(60)).await;
+            clock::advance(Duration::from_millis(39)).await;
 
-            assert!(t1.await.is_err());
-            assert_eq!(t2.await.unwrap(), 2);
-            assert_eq!(t3.await.unwrap(), 3);
+            assert!(handle2.await.expect("task should have completed").is_err());
 
-            #[cfg(not(miri))]
-            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
-        }
-    }
+            clock::advance(Duration::from_millis(1000)).await;
 
-    #[test]
-    fn test_timeout_ordering() {
-        rt! {
-            let t1 = timeout(Duration::from_millis(30), async {
-                crate::task::yield_now().await;
-                1
-            });
-            let t2 = timeout(Duration::from_millis(60), async {
-                crate::task::yield_now().await;
-                2
-            });
-            let t3 = timeout(Duration::from_millis(90), async {
-                crate::task::yield_now().await;
-                3
-            });
-
-            clock::advance(Duration::from_millis(35)).await;
-
-            assert!(t1.await.is_err());
-            assert_eq!(t2.await.unwrap(), 2);
-            assert_eq!(t3.await.unwrap(), 3);
+            assert!(handle1.await.expect("task should have completed").is_ok());
+            assert_eq!(rt_timer_count(), 0);
 
             #[cfg(not(miri))]
             assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
