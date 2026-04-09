@@ -161,3 +161,147 @@ fn poll_delay(budget_before: bool, delay: Pin<&mut Sleep>, cx: &mut Context<'_>)
         poll()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::rt::time::clock;
+
+    #[cfg(not(miri))]
+    const THRESHOLD_MS: u64 = 5;
+
+    #[test]
+    fn test_timeout_success() {
+        rt! {
+            let t = timeout(Duration::from_millis(100), async {
+                42
+            });
+
+            clock::advance(Duration::from_millis(100)).await;
+
+            // Inner future is polled before the timeout.
+            assert_eq!(t.await.unwrap(), 42);
+
+            #[cfg(not(miri))]
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_timeout_at_success() {
+        rt! {
+            let t = timeout_at(clock::now() + Duration::from_millis(100), async {
+                42
+            });
+
+            clock::advance(Duration::from_millis(100)).await;
+
+            // Inner future is polled before the timeout.
+            assert_eq!(t.await.unwrap(), 42);
+
+            #[cfg(not(miri))]
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_timeout_expired() {
+        rt! {
+            let t = timeout(Duration::from_millis(100), async {
+                crate::time::sleep(Duration::from_millis(101)).await;
+                42
+            });
+
+            clock::advance(Duration::from_millis(100)).await;
+            assert!(t.await.is_err());
+
+            #[cfg(not(miri))]
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_timeout_at_expired() {
+        rt! {
+            let t = timeout_at(clock::now() + Duration::from_millis(100), async {
+                crate::time::sleep(Duration::from_millis(101)).await;
+                42
+            });
+
+            clock::advance(Duration::from_millis(100)).await;
+            assert!(t.await.is_err());
+
+            #[cfg(not(miri))]
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_timeout_at_past_deadline() {
+        rt! {
+            let t = timeout_at(clock::now() - Duration::from_millis(1), async {
+                crate::time::sleep(Duration::from_millis(1)).await;
+                42
+            });
+
+            assert!(t.await.is_err());
+
+            #[cfg(not(miri))]
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_timeout_concurrent() {
+        rt! {
+            let t1 = timeout(Duration::from_millis(50), async {
+                crate::task::yield_now().await;
+                1
+            });
+
+            let t2 = timeout(Duration::from_millis(100), async {
+                crate::task::yield_now().await;
+                2
+            });
+
+            let t3 = timeout(Duration::ZERO, async { 3 });
+
+            clock::advance(Duration::from_millis(60)).await;
+
+            assert!(t1.await.is_err());
+            assert_eq!(t2.await.unwrap(), 2);
+            assert_eq!(t3.await.unwrap(), 3);
+
+            #[cfg(not(miri))]
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_timeout_ordering() {
+        rt! {
+            let t1 = timeout(Duration::from_millis(30), async {
+                crate::task::yield_now().await;
+                1
+            });
+            let t2 = timeout(Duration::from_millis(60), async {
+                crate::task::yield_now().await;
+                2
+            });
+            let t3 = timeout(Duration::from_millis(90), async {
+                crate::task::yield_now().await;
+                3
+            });
+
+            clock::advance(Duration::from_millis(35)).await;
+
+            assert!(t1.await.is_err());
+            assert_eq!(t2.await.unwrap(), 2);
+            assert_eq!(t3.await.unwrap(), 3);
+
+            #[cfg(not(miri))]
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+}
