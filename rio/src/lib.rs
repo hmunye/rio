@@ -25,8 +25,6 @@
 //!
 //! [yielding]: crate::task::yield_now
 
-// TODO: Add runtime shutdown.
-
 #![deny(clippy::unwrap_used)]
 #![warn(clippy::pedantic)]
 #![warn(clippy::nursery)]

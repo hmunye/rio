@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
 use std::rc::{Rc, Weak};
 use std::task::Context;
@@ -76,6 +76,7 @@ pub struct Scheduler {
     ///
     /// [`Id`]: task::Id
     deferred: RefCell<Deferred>,
+    shutdown: Cell<bool>,
 }
 
 impl Scheduler {
@@ -88,6 +89,7 @@ impl Scheduler {
                 buckets: std::array::from_fn(|_| Vec::new()),
                 bitmap: 0,
             }),
+            shutdown: Cell::new(false),
         }
     }
 
@@ -115,7 +117,7 @@ impl Scheduler {
 
         self.spawn(task, handle);
 
-        while self.work_remaining() {
+        while self.work_remaining() && !self.shutdown_ready(join.is_finished()) {
             self.tick();
         }
 
@@ -142,6 +144,11 @@ impl Scheduler {
         self.deferred.borrow_mut().insert(used_budget as usize, id);
     }
 
+    /// Signals the scheduler to begin shutting down.
+    pub fn shutdown_background(&self) {
+        self.shutdown.set(true);
+    }
+
     fn register_task(&self, task: Task, handle: Weak<Scheduler>) {
         let id = task.state.id;
         let waker = LocalWaker::new(id, handle);
@@ -156,6 +163,10 @@ impl Scheduler {
 
     fn work_remaining(&self) -> bool {
         !self.tasks.borrow().is_empty()
+    }
+
+    const fn shutdown_ready(&self, block_on_complete: bool) -> bool {
+        self.shutdown.get() && block_on_complete
     }
 
     fn run_task(&self, id: task::Id, mut task: Task, waker: LocalWaker) {

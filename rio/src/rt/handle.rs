@@ -92,6 +92,10 @@ impl Handle {
             .defer_task(id, context::with_snapshot(context::Snapshot::used_since));
     }
 
+    pub fn signal_shutdown(&self) {
+        self.scheduler.shutdown_background();
+    }
+
     fn enter(&self) -> EnterGuard {
         context::set_handle(self);
         EnterGuard {}

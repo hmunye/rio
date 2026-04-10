@@ -6,7 +6,7 @@
 //! [`tasks`]: crate::task
 
 mod runtime;
-pub use runtime::Runtime;
+pub use runtime::{Runtime, shutdown};
 
 mod handle;
 pub(crate) use handle::Handle;

@@ -1,4 +1,4 @@
-use crate::rt::Handle;
+use crate::rt::{Handle, context};
 
 /// `rio` Runtime.
 ///
@@ -61,4 +61,38 @@ impl Default for Runtime {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Signals to the runtime to begin shutting down, without waiting for any
+/// spawned tasks to complete.
+///
+/// Only the future provided to `Runtime::block_on` will be guaranteed to
+/// complete before the runtime is shutdown.
+///
+/// # Panics
+///
+/// Panics if the current thread is not within a runtime context.
+///
+/// # Examples
+///
+/// ```
+/// # #[rio::main]
+/// # async fn main() {
+/// use std::time::Duration;
+///
+/// rio::spawn(async {
+///     loop {
+///         rio::task::coop::make_cooperative(std::future::ready(())).await;
+///     }
+/// });
+///
+/// rio::spawn(async {
+///     rio::time::sleep(Duration::from_millis(10)).await;
+///     rio::rt::shutdown();
+/// });
+/// # }
+/// ```
+#[inline]
+pub fn shutdown() {
+    context::with_handle(Handle::signal_shutdown);
 }
