@@ -58,6 +58,10 @@ cfg_io! {
     pub mod io;
 }
 
+cfg_net! {
+    pub mod net;
+}
+
 pub mod rt;
 pub mod task;
 

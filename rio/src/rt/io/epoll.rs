@@ -36,6 +36,10 @@ impl From<Interest> for u32 {
     }
 }
 
+/// `epoll(7)` is used to efficiently monitor multiple file descriptors for I/O.
+/// Instead of blocking on each socket sequentially, this approach
+/// (with non-blocking sockets) allows blocking on all simultaneously,
+/// processing only the file descriptors that are ready for I/O.
 #[derive(Debug)]
 pub struct Epoll {
     fd: OwnedFd,
@@ -170,14 +174,7 @@ impl Epoll {
     ///
     /// Panics if an `epoll_create1(2)` fails.
     fn init_epoll_fd() -> OwnedFd {
-        let epoll_fd = unsafe {
-            // `epoll(7)` is used to efficiently monitor multiple file
-            // descriptors for I/O. Instead of blocking on each socket
-            // sequentially, this approach (with non-blocking sockets) allows
-            // blocking on all simultaneously, processing only the file
-            // descriptors that are ready for I/O.
-            libc::epoll_create1(0)
-        };
+        let epoll_fd = unsafe { libc::epoll_create1(0) };
 
         assert!(epoll_fd != -1, "{}", errno!("epoll_create1 failed"));
 

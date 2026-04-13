@@ -17,9 +17,10 @@ keywords = ["async", "non-blocking", "futures"]
 default = []
 
 # Enable everything.
-full = ["io", "time", "macros"]
+full = ["io", "net", "time", "macros"]
 
 io = ["libc"]
+net = ["io"]
 time = []
 macros = ["rio-macros"]
 

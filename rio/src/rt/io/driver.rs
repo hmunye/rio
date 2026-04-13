@@ -40,15 +40,15 @@ impl Driver {
 
     /// Drives the I/O resources registered with the driver.
     ///
-    /// Polls the underlying system for I/O event readiness, notifying
-    /// associated `Waker`s whose events are ready for reading/writing.
+    /// Polls the underlying system for I/O resource readiness, notifying
+    /// associated `Waker`s whose resources are ready.
     pub fn drive(&self, timeout: i32) {
         self.drive_io(timeout);
     }
 
-    /// Checks registered I/O events for readiness.
+    /// Checks registered I/O resources for readiness.
     ///
-    /// For each ready I/O event, its associated `Waker` is notified.
+    /// For each ready I/O resource, its associated `Waker` is notified.
     fn drive_io(&self, timeout: i32) {
         self.reactor.borrow_mut().wait(timeout);
     }

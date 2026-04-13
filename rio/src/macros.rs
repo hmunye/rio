@@ -41,9 +41,9 @@ macro_rules! cfg_not_time {
 
 macro_rules! cfg_io {
     ($($item:item)*) => {
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(all(feature = "io", not(target_os = "linux")))]
         compile_error!(
-            "The `io` feature requires a target with epoll support (Linux)."
+            "`io` feature requires a target with epoll support (Linux)."
         );
 
         $(
@@ -58,6 +58,25 @@ macro_rules! cfg_not_io {
     ($($item:item)*) => {
         $(
             #[cfg(not(feature = "io"))]
+            $item
+        )*
+    }
+}
+
+macro_rules! cfg_net {
+    ($($item:item)*) => {
+        $(
+            #[cfg(feature = "net")]
+            #[cfg_attr(docsrs, doc(cfg(feature = "net")))]
+            $item
+        )*
+    }
+}
+
+macro_rules! cfg_not_net {
+    ($($item:item)*) => {
+        $(
+            #[cfg(not(feature = "net"))]
             $item
         )*
     }
