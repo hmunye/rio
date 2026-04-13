@@ -5,6 +5,14 @@
 //!
 //! [`tasks`]: crate::task
 
+cfg_time! {
+    pub(crate) mod time;
+}
+
+cfg_io! {
+    pub(crate) mod io;
+}
+
 mod runtime;
 pub use runtime::{Runtime, shutdown};
 
@@ -18,7 +26,3 @@ pub(crate) use scheduler::Scheduler;
 
 pub(crate) mod task;
 pub(crate) use task::Task;
-
-cfg_time! {
-    pub(crate) mod time;
-}

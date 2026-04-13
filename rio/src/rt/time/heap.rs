@@ -137,14 +137,14 @@ impl TimerHeap {
             heap: self,
         };
 
-        let handle = TimerHandle::new();
+        let handle = TimerHandle::next();
 
         // Appending maintains the invariant of a complete binary tree: every
         // level, except possibly the last, is fully filled.
         guard
             .heap
             .buf
-            .push(TimerEntry::new(deadline, waker, handle.raw()));
+            .push(TimerEntry::new(deadline, waker, handle.0));
 
         handle
 
@@ -174,7 +174,7 @@ impl TimerHeap {
 
     #[allow(unused)]
     pub fn update_priority(&mut self, handle: &TimerHandle, deadline: Instant) -> bool {
-        if let Some(&idx) = self.handles.get(&handle.raw()) {
+        if let Some(&idx) = self.handles.get(&handle.0) {
             let timer = &mut self.buf[idx];
 
             return match timer.deadline.cmp(&deadline) {
@@ -217,7 +217,7 @@ impl TimerHeap {
     }
 
     pub fn remove(&mut self, handle: &TimerHandle) -> Option<TimerEntry> {
-        if let Some(idx) = self.handles.remove(&handle.raw()) {
+        if let Some(idx) = self.handles.remove(&handle.0) {
             let timer = self.buf.swap_remove(idx);
 
             if !self.is_empty() {
@@ -238,7 +238,7 @@ impl TimerHeap {
     }
 
     pub fn get_mut(&mut self, handle: &TimerHandle) -> Option<(&mut TimerEntry, usize)> {
-        if let Some(&idx) = self.handles.get(&handle.raw()) {
+        if let Some(&idx) = self.handles.get(&handle.0) {
             return Some((&mut self.buf[idx], idx));
         }
 

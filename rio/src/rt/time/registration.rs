@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::{cell::Cell, time::Instant};
 
 use crate::rt::context;
 
@@ -12,23 +12,22 @@ thread_local! {
 #[repr(transparent)]
 pub struct RawHandle(u64);
 
-/// Opaque identifier for a timer returned by [`TimerHeap::push`].
+/// Handle to a timer returned by [`Driver::register_timer`].
 ///
-/// Cancels the associated timer entry on `Drop`.
+/// Cancels the associated timer on `Drop`.
 ///
-/// [`TimerHeap::push`]: crate::rt::time::TimerHeap::push
+/// [`Driver::register_timer`]: crate::rt::time::Driver::register_timer
 #[derive(Debug, PartialEq, Eq)]
-pub struct TimerHandle(RawHandle);
+pub struct TimerHandle(pub RawHandle);
 
 impl TimerHandle {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn next() -> Self {
         TimerHandle(RawHandle(IDS.replace(IDS.get() + 1)))
     }
 
-    #[must_use]
-    pub const fn raw(&self) -> RawHandle {
-        self.0
+    pub fn reset(&self, deadline: Instant) -> bool {
+        context::with_handle(|handle| handle.update_timer(self, deadline))
     }
 
     fn cancel(&self) {

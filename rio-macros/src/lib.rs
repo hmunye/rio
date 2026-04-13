@@ -42,13 +42,13 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     if sig.ident != "main" {
-        return syn::Error::new_spanned(&sig.ident, "must be used on the main function")
+        return syn::Error::new_spanned(&sig.ident, "must be used on the `main` function")
             .to_compile_error()
             .into();
     }
 
     if !sig.inputs.is_empty() {
-        return syn::Error::new_spanned(&sig.inputs, "main function cannot accept arguments")
+        return syn::Error::new_spanned(&sig.inputs, "`main` function cannot accept arguments")
             .to_compile_error()
             .into();
     }

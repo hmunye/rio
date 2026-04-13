@@ -17,10 +17,12 @@ keywords = ["async", "non-blocking", "futures"]
 default = []
 
 # Enable everything.
-full = ["time", "macros"]
+full = ["io", "time", "macros"]
 
+io = ["libc"]
 time = []
 macros = ["rio-macros"]
 
 [dependencies]
+libc = { version = "0.2.184", optional = true }
 rio-macros = { path = "../rio-macros", optional = true }

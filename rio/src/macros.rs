@@ -39,6 +39,30 @@ macro_rules! cfg_not_time {
     }
 }
 
+macro_rules! cfg_io {
+    ($($item:item)*) => {
+        #[cfg(not(target_os = "linux"))]
+        compile_error!(
+            "The `io` feature requires a target with epoll support (Linux)."
+        );
+
+        $(
+            #[cfg(feature = "io")]
+            #[cfg_attr(docsrs, doc(cfg(feature = "io")))]
+            $item
+        )*
+    }
+}
+
+macro_rules! cfg_not_io {
+    ($($item:item)*) => {
+        $(
+            #[cfg(not(feature = "io"))]
+            $item
+        )*
+    }
+}
+
 macro_rules! cfg_test {
     ($($item:item)*) => {
         $(
@@ -66,4 +90,12 @@ macro_rules! rt {
             )*
         })
     };
+}
+
+macro_rules! errno {
+    ($($tt:tt)+) => {{
+        let errno = ::std::io::Error::last_os_error();
+        let prefix = format!($($tt)+);
+        ::std::io::Error::new(errno.kind(), format!("{prefix}: {errno}"))
+    }};
 }

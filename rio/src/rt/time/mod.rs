@@ -7,8 +7,8 @@ pub use driver::Driver;
 mod heap;
 pub use heap::TimerHeap;
 
-mod handle;
-pub use handle::{RawHandle, TimerHandle};
+mod registration;
+pub use registration::{RawHandle, TimerHandle};
 
 pub mod clock;
 pub use clock::Clock;

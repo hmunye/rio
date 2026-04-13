@@ -6,7 +6,8 @@
 //! ### Cooperative vs. Preemptive
 //!
 //! Unlike the __preemptive__ multitasking found in OS kernels, where the kernel
-//! interrupts threads at arbitrary points, `rio` uses a __cooperative__ model.
+//! can interrupt threads at arbitrary points, `rio` uses a __cooperative__
+//! model.
 //!
 //! In `rio`, tasks are responsible for yielding control back to the scheduler.
 //! By leveraging Rust's `async/await` model, `rio` can manage thousands of
@@ -21,7 +22,7 @@
 //! blocking operations__ (like `std::thread::sleep` or synchronous I/O) within
 //! a task. Blocking a task stops the entire runtime. Instead, use the utilities
 //! provided for working with [asynchronous tasks][task], including [yielding],
-//! [timeouts, sleeps, and intervals][time].
+//! [timeouts, sleeps, intervals][time], and [non-blocking I/O][io].
 //!
 //! [yielding]: crate::task::yield_now
 
@@ -38,6 +39,7 @@
 #![allow(clippy::struct_excessive_bools)]
 #![allow(clippy::option_if_let_else)]
 #![allow(clippy::unused_self)]
+#![allow(clippy::borrow_as_ptr)]
 
 // Must be defined first!
 #[macro_use]
@@ -48,11 +50,15 @@ cfg_macros! {
     pub use rio_macros::test;
 }
 
+cfg_time! {
+    pub mod time;
+}
+
+cfg_io! {
+    pub mod io;
+}
+
 pub mod rt;
 pub mod task;
 
 pub use task::spawn;
-
-cfg_time! {
-    pub mod time;
-}

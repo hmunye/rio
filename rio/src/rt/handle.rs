@@ -15,6 +15,12 @@ cfg_time! {
     }
 }
 
+cfg_io! {
+    use std::os::fd::RawFd;
+
+    use crate::rt::io::{self, Interest, IoHandle};
+}
+
 /// Runtime context guard.
 ///
 /// Returned by [`Handle::enter`], the context guard exits the runtime context
@@ -35,6 +41,8 @@ pub struct Handle {
     scheduler: Rc<Scheduler>,
     #[cfg(feature = "time")]
     time: Rc<time::Driver>,
+    #[cfg(feature = "io")]
+    io: Rc<io::Driver>,
 }
 
 impl Handle {
@@ -44,6 +52,8 @@ impl Handle {
             scheduler: Rc::new(Scheduler::new()),
             #[cfg(feature = "time")]
             time: Rc::new(time::Driver::new()),
+            #[cfg(feature = "io")]
+            io: Rc::new(io::Driver::new()),
         }
     }
 
@@ -131,6 +141,26 @@ cfg_time! {
             pub fn timers(&self) -> usize {
                 self.time.timers()
             }
+        }
+    }
+}
+
+cfg_io! {
+    impl Handle {
+        pub fn drive_io(&self, timeout: i32) {
+            self.io.drive(timeout);
+        }
+
+        pub fn register_io(&self, fd: RawFd, interest: Interest, waker: Waker) -> IoHandle {
+            self.io.register(fd, interest, waker)
+        }
+
+        pub fn modify_io(&self, handle: &IoHandle) {
+            self.io.modify(handle);
+        }
+
+        pub fn deregister_io(&self, handle: &IoHandle) {
+            self.io.deregister(handle);
         }
     }
 }

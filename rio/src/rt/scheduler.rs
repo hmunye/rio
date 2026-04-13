@@ -13,7 +13,6 @@ use crate::task::{
 
 cfg_time! {
     use std::time::Duration;
-    use std::thread;
 
     use crate::rt::Handle;
 }
@@ -165,6 +164,10 @@ impl Scheduler {
         !self.tasks.borrow().is_empty()
     }
 
+    fn is_idle(&self) -> bool {
+        self.ready.borrow().is_empty() && self.deferred.borrow().is_empty()
+    }
+
     const fn shutdown_ready(&self, block_on_complete: bool) -> bool {
         self.shutdown.get() && block_on_complete
     }
@@ -180,11 +183,23 @@ impl Scheduler {
     }
 
     fn tick(&self) {
-        #[cfg(feature = "time")]
+        #[cfg(all(feature = "time", feature = "io"))]
+        {
+            let timeout = self.compute_io_timeout(context::with_handle(Handle::drive_timers));
+            context::with_handle(|handle| handle.drive_io(timeout));
+        }
+
+        #[cfg(all(feature = "time", not(feature = "io")))]
         {
             if let Some(timeout) = context::with_handle(Handle::drive_timers) {
                 self.try_park(timeout);
             }
+        }
+
+        #[cfg(all(feature = "io", not(feature = "time")))]
+        {
+            let timeout = self.io_timeout(None);
+            context::with_handle(|handle| handle.drive_io(timeout));
         }
 
         // Queue deferred tasks in ascending order of execution budget used
@@ -218,15 +233,28 @@ impl Scheduler {
 }
 
 cfg_time! {
-    impl Scheduler {
-        fn is_idle(&self) -> bool {
-            self.ready.borrow().is_empty() && self.deferred.borrow().is_empty()
+    cfg_not_io! {
+        impl Scheduler {
+            fn try_park(&self, timeout: Duration) {
+                if self.is_idle() {
+                    // eprintln!("[[parking thread until next timer deadline]]");
+                    std::thread::park_timeout(timeout);
+                }
+            }
         }
+    }
+}
 
-        fn try_park(&self, timeout: Duration) {
+cfg_io! {
+    impl Scheduler {
+        fn compute_io_timeout(&self, timeout: Option<Duration>) -> i32 {
             if self.is_idle() {
-                // eprintln!("[[parking thread until next timer deadline]]");
-                thread::park_timeout(timeout);
+                match timeout {
+                    Some(t) => t.as_millis().min(i32::MAX as u128) as i32,
+                    None => -1,
+                }
+            } else {
+                0
             }
         }
     }

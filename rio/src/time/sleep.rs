@@ -104,7 +104,7 @@ impl Sleep {
         self.deadline = deadline;
 
         if let Some(timer_handle) = &self.handle {
-            context::with_handle(|handle| handle.update_timer(timer_handle, deadline));
+            timer_handle.reset(deadline);
         }
     }
 }
