@@ -17,6 +17,12 @@ cfg_time! {
     use crate::rt::Handle;
 }
 
+cfg_io! {
+    cfg_not_time! {
+        use std::time::Duration;
+    }
+}
+
 #[derive(Debug)]
 struct Deferred {
     /// Each slot corresponds to the amount of execution budget used by that
@@ -164,10 +170,6 @@ impl Scheduler {
         !self.tasks.borrow().is_empty()
     }
 
-    fn is_idle(&self) -> bool {
-        self.ready.borrow().is_empty() && self.deferred.borrow().is_empty()
-    }
-
     const fn shutdown_ready(&self, block_on_complete: bool) -> bool {
         self.shutdown.get() && block_on_complete
     }
@@ -198,7 +200,7 @@ impl Scheduler {
 
         #[cfg(all(feature = "io", not(feature = "time")))]
         {
-            let timeout = self.io_timeout(None);
+            let timeout = self.compute_io_timeout(None);
             context::with_handle(|handle| handle.drive_io(timeout));
         }
 
@@ -229,6 +231,13 @@ impl Scheduler {
                 }
             }
         });
+    }
+}
+
+#[cfg(any(feature = "time", feature = "io"))]
+impl Scheduler {
+    fn is_idle(&self) -> bool {
+        self.ready.borrow().is_empty() && self.deferred.borrow().is_empty()
     }
 }
 

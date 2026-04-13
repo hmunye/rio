@@ -16,6 +16,10 @@ cfg_time! {
 }
 
 cfg_io! {
+    cfg_not_time! {
+        use std::task::Waker;
+    }
+
     use std::os::fd::RawFd;
 
     use crate::rt::io::{self, Interest, IoHandle};
