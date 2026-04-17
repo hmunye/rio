@@ -30,11 +30,11 @@ pub enum ConnectState {
 /// [`connect`]: TcpSocket::connect
 #[derive(Debug)]
 #[must_use = "futures do nothing unless you `.await` or poll them"]
-pub struct Connect<'a> {
+pub struct Connect {
     // NOTE: Defined first to ensure it is dropped before `sock` (deregister
     // before closing FD).
     handle: Option<IoHandle>,
-    sock: &'a mut TcpSocket,
+    sock: TcpSocket,
     state: ConnectState,
 }
 
@@ -104,9 +104,8 @@ impl TcpSocket {
         })
     }
 
-    // TODO: Consume `self` instead?
     #[inline]
-    pub const fn connect(&mut self) -> Connect<'_> {
+    pub const fn connect(self) -> Connect {
         Connect {
             sock: self,
             state: ConnectState::Connecting,
@@ -123,7 +122,7 @@ impl Drop for TcpSocket {
     }
 }
 
-impl Future for Connect<'_> {
+impl Future for Connect {
     type Output = io::Result<(std::net::TcpStream, IoHandle)>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {

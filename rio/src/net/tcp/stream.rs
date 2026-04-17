@@ -270,7 +270,7 @@ impl TcpStream {
     }
 
     async fn connect_addr(addr: SocketAddr) -> io::Result<TcpStream> {
-        let mut sock = TcpSocket::new(addr)?;
+        let sock = TcpSocket::new(addr)?;
         let mut conn = sock.connect();
 
         future::poll_fn(|cx| {
