@@ -17,12 +17,12 @@ keywords = ["async", "non-blocking", "futures"]
 default = []
 
 # Enable everything.
-full = ["io", "net", "time", "macros"]
+full = ["macros", "time", "io", "net"]
 
+macros = ["rio-macros"]
+time = []
 io = ["libc"]
 net = ["io"]
-time = []
-macros = ["rio-macros"]
 
 [dependencies]
 libc = { version = "0.2.184", optional = true }

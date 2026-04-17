@@ -106,8 +106,7 @@ pub struct Timeout<F> {
 
 impl<F> Unpin for Timeout<F> where F: Unpin {}
 
-/// Projection type providing a "view" over a `Timeout<F>`, where each field is
-/// a pinned mutable reference of itself.
+/// Projection type providing a "view" over a `Timeout<F>`.
 struct TimeoutProj<'p, F> {
     val: Pin<&'p mut F>,
     delay: Pin<&'p mut Sleep>,
@@ -120,11 +119,11 @@ impl<F> Timeout<F> {
         // it safe to pin the fields, since `Pin<T>` guarantees that the memory
         // address of this instance will not change.
         unsafe {
-            let mut_self = self.get_unchecked_mut();
+            let me = self.get_unchecked_mut();
 
             TimeoutProj {
-                val: Pin::new_unchecked(&mut mut_self.val),
-                delay: Pin::new_unchecked(&mut mut_self.delay),
+                val: Pin::new_unchecked(&mut me.val),
+                delay: Pin::new_unchecked(&mut me.delay),
             }
         }
     }

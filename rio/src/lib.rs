@@ -40,6 +40,7 @@
 #![allow(clippy::option_if_let_else)]
 #![allow(clippy::unused_self)]
 #![allow(clippy::borrow_as_ptr)]
+#![allow(clippy::single_match_else)]
 
 // Must be defined first!
 #[macro_use]

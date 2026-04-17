@@ -10,8 +10,7 @@ pub struct Unconstrained<F: Future> {
     fut: F,
 }
 
-/// Projection type providing a "view" over an `Unconstrained<F>`, where each
-/// field is a pinned mutable reference of itself.
+/// Projection type providing a "view" over an `Unconstrained<F>`.
 struct UnconstrainedProj<'p, F: Future> {
     fut: Pin<&'p mut F>,
 }

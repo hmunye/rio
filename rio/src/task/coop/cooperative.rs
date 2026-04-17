@@ -10,8 +10,7 @@ pub struct Cooperative<F: Future> {
     fut: F,
 }
 
-/// Projection type providing a "view" over a `Cooperative<F>`, where each field
-/// is a pinned mutable reference of itself.
+/// Projection type providing a "view" over a `Cooperative<F>`.
 struct CooperativeProj<'p, F: Future> {
     fut: Pin<&'p mut F>,
 }

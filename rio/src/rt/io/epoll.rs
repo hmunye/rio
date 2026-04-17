@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
-use std::ptr;
 use std::task::Waker;
+use std::{ops, ptr};
 
 use crate::rt::io::{IoHandle, PollToken};
 
@@ -33,6 +33,20 @@ impl Interest {
 impl From<Interest> for u32 {
     fn from(interest: Interest) -> Self {
         interest.0 as u32
+    }
+}
+
+impl ops::BitOr for Interest {
+    type Output = Interest;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Interest(self.0 | rhs.0)
+    }
+}
+
+impl ops::BitOrAssign for Interest {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
     }
 }
 
@@ -85,7 +99,7 @@ impl Epoll {
             )
         };
 
-        assert!(ready != -1, "{}", errno!("epoll_wait failed"));
+        assert!(ready != -1, "{}", errno!("epoll_wait(2) failed"));
 
         for event in self.events.iter().take(ready as usize) {
             if let Some(waker) = self.registered.get(&PollToken::from(event.u64)) {
@@ -111,7 +125,7 @@ impl Epoll {
             unsafe { libc::epoll_ctl(self.fd.as_raw_fd(), libc::EPOLL_CTL_ADD, fd, &raw mut ev) }
                 != -1,
             "{}",
-            errno!("epoll_ctl (ADD) failed")
+            errno!("epoll_ctl(2) ADD failed")
         );
 
         self.registered.insert(handle.token, waker);
@@ -141,7 +155,7 @@ impl Epoll {
                 )
             } != -1,
             "{}",
-            errno!("epoll_ctl (MOD) failed")
+            errno!("epoll_ctl(2) MOD failed")
         );
     }
 
@@ -162,7 +176,7 @@ impl Epoll {
                 )
             } != -1,
             "{}",
-            errno!("epoll_ctl (DEL) failed")
+            errno!("epoll_ctl(2) DEL failed")
         );
 
         self.registered.remove(&handle.token);
@@ -176,7 +190,7 @@ impl Epoll {
     fn init_epoll_fd() -> OwnedFd {
         let epoll_fd = unsafe { libc::epoll_create1(0) };
 
-        assert!(epoll_fd != -1, "{}", errno!("epoll_create1 failed"));
+        assert!(epoll_fd != -1, "{}", errno!("epoll_create1(2) failed"));
 
         // SAFETY: `epoll_fd` is a valid file descriptor and no other owner
         // exist for it at this point.

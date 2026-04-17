@@ -15,3 +15,11 @@ path = "counter.rs"
 [[example]]
 name = "timers"
 path = "timers.rs"
+
+[[example]]
+name = "echo_tcp"
+path = "echo_tcp.rs"
+
+[[example]]
+name = "connect_tcp"
+path = "connect_tcp.rs"

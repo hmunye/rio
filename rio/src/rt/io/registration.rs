@@ -41,9 +41,9 @@ impl From<PollToken> for u64 {
 /// [`Driver::register`]: crate::rt::io::Driver::register
 #[derive(Debug)]
 pub struct IoHandle {
-    pub fd: RawFd,
-    pub interest: Interest,
-    pub token: PollToken,
+    pub(crate) fd: RawFd,
+    pub(crate) interest: Interest,
+    pub(crate) token: PollToken,
 }
 
 impl IoHandle {
