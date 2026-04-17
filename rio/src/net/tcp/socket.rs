@@ -1,8 +1,9 @@
+use std::mem::MaybeUninit;
 use std::net::SocketAddr;
 use std::os::fd::{FromRawFd, RawFd};
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
-use std::{io, mem, ptr};
+use std::{io, mem};
 
 use crate::rt::context;
 use crate::rt::io::{Interest, IoHandle};
@@ -16,7 +17,6 @@ pub struct TcpSocket {
     fd: RawFd,
     sock_addr_s: libc::sockaddr_storage,
     sock_len: libc::socklen_t,
-    should_close: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,8 +40,7 @@ pub struct Connect {
 
 impl TcpSocket {
     pub fn new(addr: SocketAddr) -> io::Result<Self> {
-        // SAFETY: All-zero value is valid for type `libc::sockaddr_storage`.
-        let mut sock_addr_s: libc::sockaddr_storage = unsafe { mem::zeroed() };
+        let mut sock_addr_s = MaybeUninit::<libc::sockaddr_storage>::uninit();
 
         let sock_len = match addr {
             SocketAddr::V4(v4) => {
@@ -55,10 +54,13 @@ impl TcpSocket {
                 };
 
                 unsafe {
-                    // SAFETY: `sockaddr_storage` is guaranteed to have
-                    // sufficient size and alignment to store an IPv4 or IPv6
-                    // `sockaddr` struct.
-                    ptr::write((&raw mut sock_addr_s).cast::<libc::sockaddr_in>(), ipv4);
+                    // SAFETY: We are writing a valid `sockaddr_in` into a
+                    // `sockaddr_storage` buffer with sufficient size and
+                    // alignment.
+                    sock_addr_s
+                        .as_mut_ptr()
+                        .cast::<libc::sockaddr_in>()
+                        .write(ipv4);
                 }
 
                 mem::size_of::<libc::sockaddr_in>() as libc::socklen_t
@@ -75,15 +77,22 @@ impl TcpSocket {
                 };
 
                 unsafe {
-                    // SAFETY: `sockaddr_storage` is guaranteed to have
-                    // sufficient size and alignment to store an IPv4 or IPv6
-                    // `sockaddr` struct.
-                    ptr::write((&raw mut sock_addr_s).cast::<libc::sockaddr_in6>(), ipv6);
+                    // SAFETY: We are writing a valid `sockaddr_in6` into a
+                    // `sockaddr_storage` buffer with sufficient size and
+                    // alignment.
+                    sock_addr_s
+                        .as_mut_ptr()
+                        .cast::<libc::sockaddr_in6>()
+                        .write(ipv6);
                 }
 
                 mem::size_of::<libc::sockaddr_in6>() as libc::socklen_t
             }
         };
+
+        // SAFETY: `sock_addr_s` is fully initialized in all previous match
+        // arms.
+        let sock_addr_s = unsafe { sock_addr_s.assume_init() };
 
         let domain = sock_addr_s.ss_family.into();
         let fd = unsafe {
@@ -100,7 +109,6 @@ impl TcpSocket {
             fd,
             sock_addr_s,
             sock_len,
-            should_close: true,
         })
     }
 
@@ -116,14 +124,14 @@ impl TcpSocket {
 
 impl Drop for TcpSocket {
     fn drop(&mut self) {
-        if self.should_close {
+        if self.fd != -1 {
             let _ = unsafe { libc::close(self.fd) };
         }
     }
 }
 
 impl Future for Connect {
-    type Output = io::Result<(std::net::TcpStream, IoHandle)>;
+    type Output = io::Result<(std::net::TcpStream, Option<IoHandle>)>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let coop = ready!(coop::poll_proceed());
@@ -139,16 +147,21 @@ impl Future for Connect {
                         )
                     } == -1
                     {
+                        // FIXME: use `io::ErrorKind::InProgress` when stable.
+                        //
+                        // <https://github.com/rust-lang/rust/issues/130840>
                         match io::Error::last_os_error().raw_os_error() {
                             Some(libc::EAGAIN | libc::EALREADY | libc::EINPROGRESS) => {
                                 if self.handle.is_none() {
                                     // Register for `WRITE` readiness, as the
                                     // socket becomes writable once a connection
-                                    // is established.
+                                    // is established. `ONESHOT` disables the
+                                    // FD in the interest list once an event has
+                                    // been notified on it.
                                     self.handle = Some(context::with_handle(|handle| {
                                         handle.register_io(
                                             self.sock.fd,
-                                            Interest::WRITE,
+                                            Interest::ONESHOT | Interest::WRITE,
                                             cx.waker().clone(),
                                         )
                                     }));
@@ -171,6 +184,7 @@ impl Future for Connect {
                     let mut err: libc::c_int = 0;
                     let mut err_len = mem::size_of_val(&err) as libc::socklen_t;
 
+                    // Ensure no errors occurred when connecting.
                     let ret = unsafe {
                         libc::getsockopt(
                             self.sock.fd,
@@ -182,34 +196,20 @@ impl Future for Connect {
                     };
 
                     if ret == -1 || err != 0 {
-                        return Poll::Ready(Err(errno!("SO_ERROR")));
+                        return Poll::Ready(Err(errno!("getsockopt(2) SO_ERROR failed")));
                     }
 
                     // SAFETY: `sock.fd` is guaranteed to be open at this point,
                     // and `stream` will be responsible for closing it.
                     let stream = unsafe { std::net::TcpStream::from_raw_fd(self.sock.fd) };
 
-                    let handle = self.handle.take().map_or_else(
-                        || {
-                            // For the case where `connect(2)` doesn't block
-                            // meaning no handle was initialized.
-                            context::with_handle(|handle| {
-                                handle.register_io(
-                                    self.sock.fd,
-                                    Interest::EDGE_TRIGGERED,
-                                    cx.waker().clone(),
-                                )
-                            })
-                        },
-                        |mut handle| {
-                            // Ensure the new `TcpStream` is not notified on
-                            // `WRITE`s.
-                            handle.modify(Interest::EDGE_TRIGGERED);
-                            handle
-                        },
-                    );
+                    // If `connect(2)` doesn't block, we return `None`, and
+                    // `stream` lazily registers one.
+                    let handle = self.handle.take();
 
-                    self.sock.should_close = false;
+                    // Invalidate the file descriptor for `sock` to avoid
+                    // premature close.
+                    self.sock.fd = -1;
 
                     return Poll::Ready(Ok((stream, handle)));
                 }

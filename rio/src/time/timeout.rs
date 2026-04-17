@@ -115,9 +115,8 @@ struct TimeoutProj<'p, F> {
 impl<F> Timeout<F> {
     #[must_use]
     const fn project(self: Pin<&mut Self>) -> TimeoutProj<'_, F> {
-        // SAFETY: `self` is a pinned mutable reference to `Timeout<F>`, making
-        // it safe to pin the fields, since `Pin<T>` guarantees that the memory
-        // address of this instance will not change.
+        // SAFETY: We do not move out of the pinned value, only project its
+        // fields.
         unsafe {
             let me = self.get_unchecked_mut();
 

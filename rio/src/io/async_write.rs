@@ -3,6 +3,7 @@ use std::task::{Context, Poll};
 use std::{io, ops};
 
 use crate::io::write::{Write, write};
+use crate::io::write_all::{WriteAll, write_all};
 
 /// Writes bytes asynchronously, analogous to [`std::io::Write`].
 pub trait AsyncWrite {
@@ -44,6 +45,24 @@ pub trait AsyncWrite {
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>>;
 }
 
+impl<T: AsyncWrite + Unpin + ?Sized> AsyncWrite for &mut T {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut **self).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut **self).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut **self).poll_shutdown(cx)
+    }
+}
+
 impl<P> AsyncWrite for Pin<P>
 where
     P: ops::DerefMut,
@@ -68,19 +87,19 @@ where
 
 /// Extension trait to [`AsyncWrite`] which adds utility methods.
 pub trait AsyncWriteExt: AsyncWrite {
-    /// Writes bytes from `src` into this writer.
+    /// Attempts to write bytes from a buffer into this writer.
     ///
-    /// Returns a future that resolves to `Ok(n)` where `n` is the number of
-    /// bytes written:
+    /// Returns `Ok(n)` if no error occurred, where `n` is the number of bytes
+    /// written:
     ///
-    /// * `n == src.len()`: Entire buffer was written.
-    /// * `n < src.len()`:  Partial write (caller must retry).
+    /// * `n == src.len()`: Entire buffer was written or buffer was empty.
+    /// * `n < src.len()`:  Partial write.
     /// * `n == 0`:         The writer is closed or `src` is empty.
     ///
     /// # Errors
     ///
-    /// Returns `Err(e)` if an I/O error is encountered. On error, no bytes are
-    /// written. Partial writes are **not** considered an error.
+    /// Returns an I/O error if encountered. Partial writes are **not**
+    /// considered an error.
     fn write<'a>(&'a mut self, src: &'a [u8]) -> Write<'a, Self>
     where
         Self: Unpin,
@@ -88,12 +107,20 @@ pub trait AsyncWriteExt: AsyncWrite {
         write(self, src)
     }
 
-    /// TODO:
-    fn write_all<'a>(&'a mut self, _src: &'a [u8]) -> impl Future<Output = io::Result<()>>
+    /// Attempts to write an entire buffer into this writer.
+    ///
+    /// Will continuously call [`write`] until there is no more data to be
+    /// written. This method will not return until the entire buffer has been
+    /// successfully written or an error occurs.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`write`] I/O error that occurs.
+    fn write_all<'a>(&'a mut self, src: &'a [u8]) -> WriteAll<'a, Self>
     where
         Self: Unpin,
     {
-        std::future::ready(Ok(()))
+        write_all(self, src)
     }
 
     /// TODO:

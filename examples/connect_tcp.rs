@@ -1,13 +1,9 @@
 use rio::io::AsyncWriteExt;
-use rio::net::{SocketAddr, TcpStream};
+use rio::net::TcpStream;
 
 #[rio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addrs = [
-        SocketAddr::from(([127, 0, 0, 1], 6141)),
-        SocketAddr::from(([127, 0, 0, 1], 6142)),
-    ];
-    let mut stream = TcpStream::connect(&addrs[..]).await?;
+    let mut stream = TcpStream::connect("127.0.0.1:3000").await?;
     println!("created stream: local: {}", stream.local_addr()?);
 
     let result = stream.write_all(b"hello world\n").await;

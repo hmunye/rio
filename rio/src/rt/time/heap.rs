@@ -372,10 +372,10 @@ mod tests {
     use std::task::Waker;
     use std::time::Duration;
 
-    // NOTE: Tests are wrapped in `rt!` macro since `TimerHandle::Drop` relies
-    // on a runtime context to cancel associated timers. We create a separate
-    // `TimerHeap` instance for testing the heap logic, but the Drop impl still
-    // attempts to cancel on the runtime's `TimerHeap`, effectively a noop.
+    // NOTE: These tests are wrapped in `rt!` macro since `TimerHandle::Drop`
+    // relies on a runtime context to cancel associated timers. We create a
+    // separate `TimerHeap` instance for testing the heap logic, but the Drop
+    // impl still attempts to cancel on the runtime's `TimerHeap` (noop).
 
     #[test]
     fn test_new() {

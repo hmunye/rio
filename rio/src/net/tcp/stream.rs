@@ -1,4 +1,6 @@
+use std::mem::{self, MaybeUninit};
 use std::net::{SocketAddr, ToSocketAddrs};
+use std::os::fd::AsRawFd;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 use std::time::Duration;
@@ -6,7 +8,9 @@ use std::{future, io};
 
 use crate::io::{AsyncRead, AsyncWrite};
 use crate::net::tcp::TcpSocket;
-use crate::rt::io::IoHandle;
+use crate::rt::context;
+use crate::rt::io::{Interest, IoHandle};
+use crate::task::coop;
 
 /// TCP stream between a local and a remote socket.
 ///
@@ -24,7 +28,7 @@ use crate::rt::io::IoHandle;
 pub struct TcpStream {
     // NOTE: Defined first to ensure it is dropped before `inner` (deregister
     // before closing FD).
-    _handle: IoHandle,
+    handle: Option<IoHandle>,
     inner: std::net::TcpStream,
 }
 
@@ -144,7 +148,31 @@ impl TcpStream {
     #[inline]
     #[allow(clippy::missing_errors_doc)]
     pub fn linger(&self) -> io::Result<Option<Duration>> {
-        todo!()
+        // FIXME: use `std::net::TcpStream::linger` when stable
+        //
+        // <https://github.com/rust-lang/rust/issues/88494>
+        let mut opt_value = MaybeUninit::<libc::linger>::zeroed();
+        let mut opt_len = mem::size_of_val(&opt_value) as libc::socklen_t;
+
+        let ret = unsafe {
+            libc::getsockopt(
+                self.inner.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_LINGER,
+                opt_value.as_mut_ptr().cast(),
+                &mut opt_len,
+            )
+        };
+
+        if ret == -1 {
+            return Err(errno!("getsockopt(2) SO_LINGER failed"));
+        }
+
+        // SAFETY: `getsockopt` call succeeded meaning `opt_value` must have
+        // been initialized by the system.
+        let opt_value = unsafe { opt_value.assume_init() };
+
+        Ok((opt_value.l_onoff != 0).then(|| Duration::from_secs(opt_value.l_linger as u64)))
     }
 
     /// Sets the value of the `SO_LINGER` option on this socket.
@@ -155,8 +183,30 @@ impl TcpStream {
     /// close the socket immediately, or wait for a default timeout.
     #[inline]
     #[allow(clippy::missing_errors_doc)]
-    pub fn set_linger(&self, _linger: Option<Duration>) -> io::Result<()> {
-        todo!()
+    pub fn set_linger(&self, linger: Option<Duration>) -> io::Result<()> {
+        // FIXME: use `std::net::TcpStream::set_linger` when stable
+        //
+        // <https://github.com/rust-lang/rust/issues/88494>
+        let opt_value = libc::linger {
+            l_onoff: libc::c_int::from(linger.is_some()),
+            l_linger: linger.unwrap_or_default().as_secs() as libc::c_int,
+        };
+        let opt_len = mem::size_of_val(&opt_value) as libc::socklen_t;
+
+        if unsafe {
+            libc::setsockopt(
+                self.inner.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_LINGER,
+                (&raw const opt_value).cast(),
+                opt_len,
+            )
+        } == -1
+        {
+            return Err(errno!("setsockopt(2) SO_LINGER failed"));
+        }
+
+        Ok(())
     }
 
     /// Gets the value of the `TCP_QUICKACK` option on this socket.
@@ -260,12 +310,15 @@ impl TcpStream {
         self.inner.set_nodelay(nodelay)
     }
 
-    pub(crate) fn from_std(stream: std::net::TcpStream, handle: IoHandle) -> io::Result<Self> {
+    pub(crate) fn from_std(
+        stream: std::net::TcpStream,
+        handle: Option<IoHandle>,
+    ) -> io::Result<Self> {
         stream.set_nonblocking(true)?;
 
         Ok(TcpStream {
             inner: stream,
-            _handle: handle,
+            handle,
         })
     }
 
@@ -283,28 +336,141 @@ impl TcpStream {
 
 impl AsyncRead for TcpStream {
     fn poll_read(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-        _buf: &mut [u8],
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        todo!()
+        use std::io::Read;
+
+        let coop = ready!(coop::poll_proceed());
+
+        // Since the `TcpStream` is registered with `EPOLLET`, we must wait for
+        // another event only after `read` returns `EAGAIN` (`WouldBlock`).
+        let mut read = 0;
+
+        loop {
+            match self.inner.read(&mut buf[read..]) {
+                Ok(0) => {
+                    coop.made_progress();
+                    return Poll::Ready(Ok(read));
+                }
+                Ok(n) => {
+                    read += n;
+
+                    if read == buf.len() {
+                        coop.made_progress();
+                        return Poll::Ready(Ok(read));
+                    }
+                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    match self.handle.as_mut() {
+                        Some(handle) => {
+                            let prev = handle.interest;
+                            if !prev.is_readable() {
+                                let new = prev | Interest::EDGE_TRIGGERED | Interest::READ;
+                                handle.modify(new);
+                            }
+                        }
+                        None => {
+                            self.handle = Some(context::with_handle(|h| {
+                                h.register_io(
+                                    self.inner.as_raw_fd(),
+                                    Interest::EDGE_TRIGGERED | Interest::READ,
+                                    cx.waker().clone(),
+                                )
+                            }));
+                        }
+                    }
+
+                    if read > 0 {
+                        coop.made_progress();
+                        return Poll::Ready(Ok(read));
+                    } else {
+                        return Poll::Pending;
+                    }
+                }
+                Err(e) => {
+                    coop.made_progress();
+                    return Poll::Ready(Err(e));
+                }
+            }
+        }
     }
 }
 
 impl AsyncWrite for TcpStream {
     fn poll_write(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-        _buf: &[u8],
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        todo!()
+        use std::io::Write;
+
+        let coop = ready!(coop::poll_proceed());
+
+        // Since the `TcpStream` is registered with `EPOLLET`, we must wait for
+        // another event only after `write` returns `EAGAIN` (`WouldBlock`).
+        let mut written = 0;
+
+        loop {
+            match self.inner.write(&buf[written..]) {
+                Ok(0) => {
+                    coop.made_progress();
+                    return Poll::Ready(Ok(written));
+                }
+                Ok(n) => {
+                    written += n;
+
+                    if written == buf.len() {
+                        coop.made_progress();
+                        return Poll::Ready(Ok(written));
+                    }
+                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    match self.handle.as_mut() {
+                        Some(handle) => {
+                            let prev = handle.interest;
+                            if !prev.is_writable() {
+                                let new = prev | Interest::EDGE_TRIGGERED | Interest::WRITE;
+                                handle.modify(new);
+                            }
+                        }
+                        None => {
+                            self.handle = Some(context::with_handle(|h| {
+                                h.register_io(
+                                    self.inner.as_raw_fd(),
+                                    Interest::EDGE_TRIGGERED | Interest::WRITE,
+                                    cx.waker().clone(),
+                                )
+                            }));
+                        }
+                    }
+
+                    if written > 0 {
+                        coop.made_progress();
+                        return Poll::Ready(Ok(written));
+                    } else {
+                        return Poll::Pending;
+                    }
+                }
+                Err(e) => {
+                    coop.made_progress();
+                    return Poll::Ready(Err(e));
+                }
+            }
+        }
     }
 
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        todo!()
+        Poll::Ready(Ok(()))
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        todo!()
+        match self.inner.shutdown(std::net::Shutdown::Write) {
+            Ok(()) => Poll::Ready(Ok(())),
+            // <https://docs.rs/tokio/latest/src/tokio/net/tcp/stream.rs.html#1130>
+            Err(e) if e.kind() == io::ErrorKind::NotConnected => Poll::Ready(Ok(())),
+            Err(e) => Poll::Ready(Err(e)),
+        }
     }
 }

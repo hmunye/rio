@@ -18,9 +18,8 @@ struct UnconstrainedProj<'p, F: Future> {
 impl<F: Future> Unconstrained<F> {
     #[must_use]
     const fn project(self: Pin<&mut Self>) -> UnconstrainedProj<'_, F> {
-        // SAFETY: `self` is a pinned mutable reference to `Unconstrained<F>`,
-        // making it safe to pin the `fut` field, since `Pin<T>` guarantees that
-        // the memory address of this instance will not change.
+        // SAFETY: We do not move out of the pinned value, only project its
+        // field.
         unsafe {
             UnconstrainedProj {
                 fut: Pin::new_unchecked(&mut self.get_unchecked_mut().fut),
@@ -34,7 +33,6 @@ impl<F: Future> Future for Unconstrained<F> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let me = self.project();
-
         coop::with_unconstrained(|| me.fut.poll(cx))
     }
 }

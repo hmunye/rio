@@ -24,19 +24,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             loop {
                 match socket.read(&mut buf).await {
                     Ok(0) => {
+                        eprintln!("[{addr}]: disconnected");
                         // Connection closed by peer.
                         return;
                     }
                     Ok(n) => {
-                        // Write the data back. If writing fails, log the error
-                        // and exit.
+                        eprintln!(
+                            "[{addr}]: sent {n} bytes; {}",
+                            std::str::from_utf8(&buf[0..n])
+                                .unwrap()
+                                .escape_debug()
+                                .collect::<String>()
+                        );
+
                         if let Err(e) = socket.write_all(&buf[0..n]).await {
-                            eprintln!("failed to write to socket {addr}: {e}");
+                            eprintln!("[{addr}]: failed to write to socket; {e}");
                             return;
                         }
                     }
                     Err(e) => {
-                        eprintln!("failed to read from socket {addr}: {e}");
+                        eprintln!("[{addr}]: failed to read from socket; {e}");
                         return;
                     }
                 }

@@ -16,6 +16,8 @@ impl Interest {
     pub const WRITE: Interest = Interest(libc::EPOLLOUT);
     /// Requests edge-triggered notification for the associated file descriptor.
     pub const EDGE_TRIGGERED: Interest = Interest(libc::EPOLLET);
+    /// Requests one-shot notification for the associated file descriptor.
+    pub const ONESHOT: Interest = Interest(libc::EPOLLONESHOT);
 
     pub const fn is_readable(self) -> bool {
         (self.0 & libc::EPOLLIN) != 0
@@ -27,6 +29,10 @@ impl Interest {
 
     pub const fn is_edge_triggered(self) -> bool {
         (self.0 & libc::EPOLLET) != 0
+    }
+
+    pub const fn is_oneshot(self) -> bool {
+        (self.0 & libc::EPOLLONESHOT) != 0
     }
 }
 
@@ -121,6 +127,11 @@ impl Epoll {
             u64: handle.token.into(),
         };
 
+        // TODO: If registration becomes lazy add this?
+        //
+        // if io::Error::last_os_error().raw_os_error() == Some(libc::EEXIST) {
+        //     self.modify_fd(handle);
+        // }
         assert!(
             unsafe { libc::epoll_ctl(self.fd.as_raw_fd(), libc::EPOLL_CTL_ADD, fd, &raw mut ev) }
                 != -1,

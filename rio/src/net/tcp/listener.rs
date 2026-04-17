@@ -179,7 +179,7 @@ impl TcpListener {
 
     async fn bind_addr(addr: SocketAddr) -> io::Result<TcpListener> {
         future::poll_fn(|cx| {
-            // TODO: Set `SO_REUSEADDR` socket option.
+            // NOTE: `SO_REUSEADDR` socket option is already set here.
             let ln = std::net::TcpListener::bind(addr)?;
             let fd = ln.as_raw_fd();
 
@@ -199,22 +199,14 @@ impl TcpListener {
 impl Future for Accept<'_> {
     type Output = io::Result<(TcpStream, SocketAddr)>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
         let coop = ready!(coop::poll_proceed());
 
         match self.0.ln.accept() {
             Ok((stream, addr)) => {
                 coop.made_progress();
 
-                let handle = context::with_handle(|handle| {
-                    handle.register_io(
-                        stream.as_raw_fd(),
-                        Interest::EDGE_TRIGGERED,
-                        cx.waker().clone(),
-                    )
-                });
-
-                match TcpStream::from_std(stream, handle) {
+                match TcpStream::from_std(stream, None) {
                     Ok(stream) => Poll::Ready(Ok((stream, addr))),
                     Err(e) => Poll::Ready(Err(e)),
                 }

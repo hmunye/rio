@@ -5,7 +5,6 @@ use std::task::{Context, Poll};
 
 use crate::io::AsyncWrite;
 
-/// Returns a `Future` which writes bytes asynchronously from `buf` to `writer`.
 pub const fn write<'a, W>(writer: &'a mut W, buf: &'a [u8]) -> Write<'a, W>
 where
     W: AsyncWrite + Unpin + ?Sized,
@@ -30,21 +29,22 @@ pub struct Write<'a, W: ?Sized> {
 }
 
 /// Projection type providing a "view" over a `Write<'_, W>`.
-struct WriteProj<'p, W: ?Sized> {
-    writer: &'p mut W,
-    buf: &'p [u8],
+#[allow(clippy::mut_mut)]
+struct WriteProj<'a, 'p, W: ?Sized> {
+    writer: &'p mut &'a mut W,
+    buf: &'p mut &'a [u8],
 }
 
-impl<W: ?Sized> Write<'_, W> {
+impl<'a, W: ?Sized> Write<'a, W> {
     #[must_use]
-    const fn project(self: Pin<&mut Self>) -> WriteProj<'_, W> {
-        // SAFETY: Fields `writer` and `buf` are `Unpin`, so moving references
-        // out of this pinned `Write` upholds the `Pin<T>` invariant.
+    const fn project(self: Pin<&mut Self>) -> WriteProj<'a, '_, W> {
+        // SAFETY: We do not move out of the pinned value, only project its
+        // fields.
         let me = unsafe { self.get_unchecked_mut() };
 
         WriteProj {
-            writer: me.writer,
-            buf: me.buf,
+            writer: &mut me.writer,
+            buf: &mut me.buf,
         }
     }
 }
