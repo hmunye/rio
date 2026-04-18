@@ -95,7 +95,7 @@ impl TcpStream {
         Err(last_err.unwrap_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "could not resolve to any address",
+                "could not resolve to any addresses",
             )
         }))
     }

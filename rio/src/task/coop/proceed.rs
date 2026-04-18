@@ -6,7 +6,7 @@ use crate::task::{self, coop::Budget};
 
 /// Guard returned by [`poll_proceed`].
 #[derive(Debug)]
-#[must_use = "dropping this guard will leave consumed budget uncommitted"]
+#[must_use = "not using this guard will leave any consumed budget uncommitted"]
 pub struct BudgetGuard(Cell<Budget>);
 
 impl BudgetGuard {
