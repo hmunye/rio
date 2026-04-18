@@ -15,5 +15,6 @@ mod async_write;
 pub use async_write::{AsyncWrite, AsyncWriteExt};
 
 mod read;
+mod shutdown;
 mod write;
 mod write_all;

@@ -2,6 +2,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{io, ops};
 
+use crate::io::shutdown::{Shutdown, shutdown};
 use crate::io::write::{Write, write};
 use crate::io::write_all::{WriteAll, write_all};
 
@@ -115,7 +116,7 @@ pub trait AsyncWriteExt: AsyncWrite {
     ///
     /// # Errors
     ///
-    /// Returns the first [`write`] I/O error that occurs.
+    /// Returns the first [`write`] I/O error encountered.
     fn write_all<'a>(&'a mut self, src: &'a [u8]) -> WriteAll<'a, Self>
     where
         Self: Unpin,
@@ -131,12 +132,20 @@ pub trait AsyncWriteExt: AsyncWrite {
         todo!()
     }
 
-    /// TODO:
-    fn shutdown(&mut self) -> ()
+    /// Initiates a graceful shutdown of this writer.
+    ///
+    /// Similar to [`flush`], all intermediately buffered content is written to
+    /// the underlying stream. Once the operation completes, the caller should
+    /// no longer attempt to write to the stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if encountered.
+    fn shutdown(&mut self) -> Shutdown<'_, Self>
     where
         Self: Unpin,
     {
-        todo!()
+        shutdown(self)
     }
 }
 
