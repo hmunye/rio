@@ -1,41 +1,44 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::os::fd::RawFd;
 use std::task::Waker;
 
-use crate::rt::io::{Epoll, Interest, IoHandle};
+use crate::rt::io::reactor::IoReactor;
+use crate::rt::io::{Interest, IoHandle, PollToken};
 
 /// Driver for managing non-blocking I/O within the runtime.
-///
-/// Registers I/O resources with the underlying system and monitors them for
-/// readiness, waking tasks when progress can be made.
 #[derive(Debug)]
 pub struct Driver {
-    reactor: RefCell<Epoll>,
+    inner: RefCell<IoReactor>,
+    registered: RefCell<HashMap<PollToken, Waker>>,
 }
 
 impl Driver {
     #[must_use]
     pub fn new() -> Self {
         Driver {
-            reactor: RefCell::new(Epoll::new()),
+            inner: RefCell::new(IoReactor::new()),
+            registered: RefCell::default(),
         }
     }
 
     /// Registers an I/O resource with the driver, monitoring for the events
-    /// specified by `interest`, returning its `IoHandle`.
+    /// specified by `interest`, returning an `IoHandle`.
     pub fn register(&self, fd: RawFd, interest: Interest, waker: Waker) -> IoHandle {
-        self.reactor.borrow_mut().register_fd(fd, interest, waker)
+        let handle = self.inner.borrow().register(fd, interest);
+        self.registered.borrow_mut().insert(handle.token, waker);
+        handle
     }
 
-    /// Modifies the event mask for the I/O resource identified by `handle` to
-    /// match the current state of `handle`.
-    pub fn modify(&self, handle: &IoHandle) {
-        self.reactor.borrow().modify_fd(handle);
+    /// Updates the `interest` set for the I/O resource identified by `handle`.
+    pub fn update_interest(&self, handle: &IoHandle) {
+        self.inner.borrow().update_interest(handle);
     }
 
     /// Deregisters an I/O resource from the driver identified by `handle`.
     pub fn deregister(&self, handle: &IoHandle) {
-        self.reactor.borrow_mut().deregister_fd(handle);
+        self.inner.borrow().deregister(handle);
+        self.registered.borrow_mut().remove(&handle.token);
     }
 
     /// Drives the I/O resources registered with the driver.
@@ -43,6 +46,10 @@ impl Driver {
     /// Polls the underlying system for I/O resource readiness, notifying
     /// associated `Waker`s whose resources are ready.
     pub fn drive(&self, timeout: i32) {
+        if self.registered.borrow().is_empty() {
+            return;
+        }
+
         self.drive_io(timeout);
     }
 
@@ -50,6 +57,13 @@ impl Driver {
     ///
     /// For each ready I/O resource, its associated `Waker` is notified.
     fn drive_io(&self, timeout: i32) {
-        self.reactor.borrow_mut().wait(timeout);
+        let mut inner = self.inner.borrow_mut();
+        let tokens = inner.wait(timeout);
+
+        for token in tokens {
+            if let Some(waker) = self.registered.borrow().get(&token) {
+                waker.wake_by_ref();
+            }
+        }
     }
 }

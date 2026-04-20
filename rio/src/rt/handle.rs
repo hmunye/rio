@@ -159,8 +159,8 @@ cfg_io! {
             self.io.register(fd, interest, waker)
         }
 
-        pub fn modify_io(&self, handle: &IoHandle) {
-            self.io.modify(handle);
+        pub fn update_interest_io(&self, handle: &IoHandle) {
+            self.io.update_interest(handle);
         }
 
         pub fn deregister_io(&self, handle: &IoHandle) {

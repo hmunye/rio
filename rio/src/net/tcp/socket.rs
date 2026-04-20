@@ -44,32 +44,75 @@ impl TcpSocket {
 
         let sock_len = match addr {
             SocketAddr::V4(v4) => {
+                let sin_len = mem::size_of::<libc::sockaddr_in>();
+
+                #[cfg(target_os = "linux")]
                 let ipv4 = libc::sockaddr_in {
                     sin_family: libc::AF_INET as u16,
                     sin_port: v4.port().to_be(), // network-byte order
                     sin_addr: libc::in_addr {
+                        // Needs to be `from_ne_bytes`.
+                        s_addr: u32::from_ne_bytes(v4.ip().octets()),
+                    },
+                    sin_zero: [0; 8],
+                };
+
+                #[cfg(any(
+                    target_os = "macos",
+                    target_os = "freebsd",
+                    target_os = "dragonfly",
+                    target_os = "openbsd",
+                    target_os = "netbsd"
+                ))]
+                let ipv4 = libc::sockaddr_in {
+                    sin_len: sin_len as u8,
+                    sin_family: libc::AF_INET as u8,
+                    sin_port: v4.port().to_be(), // network-byte order
+                    sin_addr: libc::in_addr {
+                        // Needs to be `from_ne_bytes`.
                         s_addr: u32::from_ne_bytes(v4.ip().octets()),
                     },
                     sin_zero: [0; 8],
                 };
 
                 unsafe {
-                    // SAFETY: We are writing a valid `sockaddr_in` into a
-                    // `sockaddr_storage` buffer with sufficient size and
-                    // alignment.
+                    // SAFETY: `sockaddr_storage` is guaranteed to have at
+                    // least the alignment of `sockaddr_in` and is large enough
+                    // to store it.
                     sock_addr_s
                         .as_mut_ptr()
                         .cast::<libc::sockaddr_in>()
                         .write(ipv4);
                 }
 
-                mem::size_of::<libc::sockaddr_in>() as libc::socklen_t
+                sin_len as libc::socklen_t
             }
             SocketAddr::V6(v6) => {
+                let sin_len = mem::size_of::<libc::sockaddr_in6>();
+
+                #[cfg(target_os = "linux")]
                 let ipv6 = libc::sockaddr_in6 {
                     sin6_family: libc::AF_INET6 as u16,
-                    sin6_port: v6.port().to_be(), // network-byte order
-                    sin6_flowinfo: v6.flowinfo().to_be(), // network-byte order
+                    sin6_port: v6.port().to_be(),
+                    sin6_flowinfo: v6.flowinfo(),
+                    sin6_addr: libc::in6_addr {
+                        s6_addr: v6.ip().octets(),
+                    },
+                    sin6_scope_id: v6.scope_id(),
+                };
+
+                #[cfg(any(
+                    target_os = "macos",
+                    target_os = "freebsd",
+                    target_os = "dragonfly",
+                    target_os = "openbsd",
+                    target_os = "netbsd"
+                ))]
+                let ipv6 = libc::sockaddr_in6 {
+                    sin6_len: sin_len as u8,
+                    sin6_family: libc::AF_INET6 as u8,
+                    sin6_port: v6.port().to_be(),
+                    sin6_flowinfo: v6.flowinfo(),
                     sin6_addr: libc::in6_addr {
                         s6_addr: v6.ip().octets(),
                     },
@@ -77,29 +120,51 @@ impl TcpSocket {
                 };
 
                 unsafe {
-                    // SAFETY: We are writing a valid `sockaddr_in6` into a
-                    // `sockaddr_storage` buffer with sufficient size and
-                    // alignment.
+                    // SAFETY: `sockaddr_storage` is guaranteed to have at
+                    // least the alignment of `sockaddr_in6` and is large enough
+                    // to store it.
                     sock_addr_s
                         .as_mut_ptr()
                         .cast::<libc::sockaddr_in6>()
                         .write(ipv6);
                 }
 
-                mem::size_of::<libc::sockaddr_in6>() as libc::socklen_t
+                sin_len as libc::socklen_t
             }
         };
 
-        // SAFETY: `sock_addr_s` is fully initialized in all previous match
-        // arms.
+        // SAFETY: `sock_addr_s` is fully initialized at this point.
         let sock_addr_s = unsafe { sock_addr_s.assume_init() };
-
         let domain = sock_addr_s.ss_family.into();
+
+        #[cfg(target_os = "linux")]
         let fd = unsafe {
             let fd = libc::socket(domain, libc::SOCK_STREAM | libc::SOCK_NONBLOCK, 0);
 
             if fd == -1 {
                 return Err(errno!("socket(2) failed"));
+            }
+
+            fd
+        };
+
+        #[cfg(any(
+            target_os = "macos",
+            target_os = "freebsd",
+            target_os = "dragonfly",
+            target_os = "openbsd",
+            target_os = "netbsd"
+        ))]
+        let fd = unsafe {
+            let fd = libc::socket(domain, libc::SOCK_STREAM, 0);
+
+            if fd == -1 {
+                return Err(errno!("socket(2) failed"));
+            }
+
+            if libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK) == -1 {
+                libc::close(fd);
+                return Err(errno!("fcntl(2) O_NONBLOCK failed"));
             }
 
             fd
@@ -153,21 +218,36 @@ impl Future for Connect {
                         match io::Error::last_os_error().raw_os_error() {
                             Some(libc::EAGAIN | libc::EALREADY | libc::EINPROGRESS) => {
                                 if self.handle.is_none() {
-                                    // Register for `WRITE` readiness, as the
-                                    // socket becomes writable once a connection
-                                    // is established. `ONESHOT` disables the
-                                    // FD in the interest list once an event has
-                                    // been notified on it.
+                                    #[cfg(target_os = "linux")]
+                                    // `ONESHOT` disables further notifications
+                                    // for the file descriptor after an event is
+                                    // triggered; must be rearmed.
+                                    let interest = Interest::ONESHOT | Interest::WRITE;
+
+                                    #[cfg(any(
+                                        target_os = "macos",
+                                        target_os = "freebsd",
+                                        target_os = "dragonfly",
+                                        target_os = "openbsd",
+                                        target_os = "netbsd"
+                                    ))]
+                                    let interest = Interest::WRITE;
+
+                                    // Socket becomes writable once a connection
+                                    // is established.
                                     self.handle = Some(context::with_handle(|handle| {
                                         handle.register_io(
                                             self.sock.fd,
-                                            Interest::ONESHOT | Interest::WRITE,
+                                            interest,
                                             cx.waker().clone(),
                                         )
                                     }));
                                 }
 
                                 return Poll::Pending;
+                            }
+                            Some(libc::EISCONN) => {
+                                self.state = ConnectState::Connected;
                             }
                             _ => {
                                 coop.made_progress();
@@ -184,7 +264,6 @@ impl Future for Connect {
                     let mut err: libc::c_int = 0;
                     let mut err_len = mem::size_of_val(&err) as libc::socklen_t;
 
-                    // Ensure no errors occurred when connecting.
                     let ret = unsafe {
                         libc::getsockopt(
                             self.sock.fd,
@@ -203,9 +282,27 @@ impl Future for Connect {
                     // and `stream` will be responsible for closing it.
                     let stream = unsafe { std::net::TcpStream::from_raw_fd(self.sock.fd) };
 
+                    #[cfg(target_os = "linux")]
                     // If `connect(2)` doesn't block, we return `None`, and
-                    // `stream` lazily registers one.
+                    // `stream` lazily registers one on the first read/write.
                     let handle = self.handle.take();
+
+                    #[cfg(any(
+                        target_os = "macos",
+                        target_os = "freebsd",
+                        target_os = "dragonfly",
+                        target_os = "openbsd",
+                        target_os = "netbsd"
+                    ))]
+                    let handle = self.handle.take().map(|mut handle| {
+                        // Disable the event to ensure it does not return on
+                        // additional `WRTIE` readiness. Clear the marked events
+                        // so on first `poll_write`, we add `Interest::ENABLE`.
+                        handle.add_interest(Interest::DISABLE);
+                        handle.clear_events();
+
+                        handle
+                    });
 
                     // Invalidate the file descriptor for `sock` to avoid
                     // premature close.

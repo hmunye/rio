@@ -41,9 +41,16 @@ macro_rules! cfg_not_time {
 
 macro_rules! cfg_io {
     ($($item:item)*) => {
-        #[cfg(all(feature = "io", not(target_os = "linux")))]
+        #[cfg(all(feature = "io", not(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "freebsd",
+            target_os = "dragonfly",
+            target_os = "openbsd",
+            target_os = "netbsd"
+        ))))]
         compile_error!(
-            "`io` feature requires a target with epoll support (Linux)."
+            "io feature requires a target with either epoll (Linux) or kqueue (macOS/BSD) support."
         );
 
         $(
@@ -95,6 +102,30 @@ macro_rules! cfg_not_test {
     ($($item:item)*) => {
         $(
             #[cfg(not(test))]
+            $item
+        )*
+    }
+}
+
+macro_rules! cfg_linux {
+    ($($item:item)*) => {
+        $(
+            #[cfg(target_os = "linux")]
+            $item
+        )*
+    }
+}
+
+macro_rules! cfg_bsd {
+    ($($item:item)*) => {
+        $(
+            #[cfg(any(
+                target_os = "macos",
+                target_os = "freebsd",
+                target_os = "dragonfly",
+                target_os = "openbsd",
+                target_os = "netbsd"
+            ))]
             $item
         )*
     }

@@ -152,7 +152,7 @@ impl TcpStream {
         //
         // <https://github.com/rust-lang/rust/issues/88494>
         let mut opt_value = MaybeUninit::<libc::linger>::zeroed();
-        let mut opt_len = mem::size_of_val(&opt_value) as libc::socklen_t;
+        let mut opt_len = mem::size_of::<libc::linger>() as libc::socklen_t;
 
         let ret = unsafe {
             libc::getsockopt(
@@ -191,7 +191,7 @@ impl TcpStream {
             l_onoff: libc::c_int::from(linger.is_some()),
             l_linger: linger.unwrap_or_default().as_secs() as libc::c_int,
         };
-        let opt_len = mem::size_of_val(&opt_value) as libc::socklen_t;
+        let opt_len = mem::size_of::<libc::linger>() as libc::socklen_t;
 
         if unsafe {
             libc::setsockopt(
@@ -206,70 +206,6 @@ impl TcpStream {
             return Err(errno!("setsockopt(2) SO_LINGER failed"));
         }
 
-        Ok(())
-    }
-
-    /// Gets the value of the `TCP_QUICKACK` option on this socket.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # #[rio::main]
-    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use rio::net::TcpStream;
-    ///
-    /// let stream = TcpStream::connect("127.0.0.1:8080").await?;
-    /// stream.set_quickack(true)?;
-    /// assert_eq!(stream.quickack().unwrap_or(false), true);
-    ///
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[inline]
-    #[allow(clippy::missing_errors_doc)]
-    pub fn quickack(&self) -> io::Result<bool> {
-        #[cfg(target_os = "linux")]
-        {
-            use std::os::linux::net::TcpStreamExt;
-            self.inner.quickack()
-        }
-
-        #[cfg(not(target_os = "linux"))]
-        Ok(true)
-    }
-
-    /// Sets the value for the `TCP_QUICKACK` option on this socket
-    ///
-    /// This flag causes Linux to eagerly send `ACK`s rather than delaying them.
-    /// Linux may reset this flag after further operations on the socket.
-    ///
-    /// See [`man 7 tcp`](https://man7.org/linux/man-pages/man7/tcp.7.html) and
-    /// [TCP delayed acknowledgement](https://en.wikipedia.org/wiki/TCP_delayed_acknowledgment)
-    /// for more information.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # #[rio::main]
-    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use rio::net::TcpStream;
-    ///
-    /// let stream = TcpStream::connect("127.0.0.1:8080").await?;
-    /// stream.set_quickack(true)?;
-    ///
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[inline]
-    #[allow(clippy::missing_errors_doc)]
-    pub fn set_quickack(&self, quickack: bool) -> io::Result<()> {
-        #[cfg(target_os = "linux")]
-        {
-            use std::os::linux::net::TcpStreamExt;
-            self.inner.set_quickack(quickack)
-        }
-
-        #[cfg(not(target_os = "linux"))]
         Ok(())
     }
 
@@ -334,6 +270,62 @@ impl TcpStream {
     }
 }
 
+cfg_linux! {
+    impl TcpStream {
+        /// Gets the value of the `TCP_QUICKACK` option on this socket.
+        ///
+        /// # Examples
+        ///
+        /// ```no_run
+        /// # #[rio::main]
+        /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+        /// use rio::net::TcpStream;
+        ///
+        /// let stream = TcpStream::connect("127.0.0.1:8080").await?;
+        /// stream.set_quickack(true)?;
+        /// assert_eq!(stream.quickack().unwrap_or(false), true);
+        ///
+        /// # Ok(())
+        /// # }
+        /// ```
+        #[inline]
+        #[allow(clippy::missing_errors_doc)]
+        pub fn quickack(&self) -> io::Result<bool> {
+            use std::os::linux::net::TcpStreamExt;
+            self.inner.quickack()
+        }
+
+        /// Sets the value for the `TCP_QUICKACK` option on this socket
+        ///
+        /// This flag causes Linux to eagerly send `ACK`s rather than delaying them.
+        /// Linux may reset this flag after further operations on the socket.
+        ///
+        /// See [`man 7 tcp`](https://man7.org/linux/man-pages/man7/tcp.7.html) and
+        /// [TCP delayed acknowledgement](https://en.wikipedia.org/wiki/TCP_delayed_acknowledgment)
+        /// for more information.
+        ///
+        /// # Examples
+        ///
+        /// ```no_run
+        /// # #[rio::main]
+        /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+        /// use rio::net::TcpStream;
+        ///
+        /// let stream = TcpStream::connect("127.0.0.1:8080").await?;
+        /// stream.set_quickack(true)?;
+        ///
+        /// # Ok(())
+        /// # }
+        /// ```
+        #[inline]
+        #[allow(clippy::missing_errors_doc)]
+        pub fn set_quickack(&self, quickack: bool) -> io::Result<()> {
+            use std::os::linux::net::TcpStreamExt;
+            self.inner.set_quickack(quickack)
+        }
+    }
+}
+
 impl AsyncRead for TcpStream {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -344,8 +336,8 @@ impl AsyncRead for TcpStream {
 
         let coop = ready!(coop::poll_proceed());
 
-        // Since the `TcpStream` is registered with `EPOLLET`, we must wait for
-        // another event only after `read` returns `EAGAIN` (`WouldBlock`).
+        // Ensure we fully drain the stream until `read` returns `EAGAIN`
+        // (`WouldBlock`).
         let mut read = 0;
 
         loop {
@@ -365,19 +357,37 @@ impl AsyncRead for TcpStream {
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                     match self.handle.as_mut() {
                         Some(handle) => {
-                            let prev = handle.interest;
-                            if !prev.is_readable() {
-                                let new = prev | Interest::EDGE_TRIGGERED | Interest::READ;
-                                handle.modify(new);
+                            if !handle.is_readable() {
+                                #[cfg(target_os = "linux")]
+                                let interest = Interest::EDGE_TRIGGERED | Interest::READ;
+
+                                #[cfg(any(
+                                    target_os = "macos",
+                                    target_os = "freebsd",
+                                    target_os = "dragonfly",
+                                    target_os = "openbsd",
+                                    target_os = "netbsd"
+                                ))]
+                                let interest = Interest::READ;
+
+                                handle.add_interest(interest);
                             }
                         }
                         None => {
+                            #[cfg(target_os = "linux")]
+                            let interest = Interest::EDGE_TRIGGERED | Interest::READ;
+
+                            #[cfg(any(
+                                target_os = "macos",
+                                target_os = "freebsd",
+                                target_os = "dragonfly",
+                                target_os = "openbsd",
+                                target_os = "netbsd"
+                            ))]
+                            let interest = Interest::READ;
+
                             self.handle = Some(context::with_handle(|h| {
-                                h.register_io(
-                                    self.inner.as_raw_fd(),
-                                    Interest::EDGE_TRIGGERED | Interest::READ,
-                                    cx.waker().clone(),
-                                )
+                                h.register_io(self.inner.as_raw_fd(), interest, cx.waker().clone())
                             }));
                         }
                     }
@@ -408,8 +418,8 @@ impl AsyncWrite for TcpStream {
 
         let coop = ready!(coop::poll_proceed());
 
-        // Since the `TcpStream` is registered with `EPOLLET`, we must wait for
-        // another event only after `write` returns `EAGAIN` (`WouldBlock`).
+        // Ensure we fully drain the stream until `write` returns `EAGAIN`
+        // (`WouldBlock`).
         let mut written = 0;
 
         loop {
@@ -429,19 +439,40 @@ impl AsyncWrite for TcpStream {
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                     match self.handle.as_mut() {
                         Some(handle) => {
-                            let prev = handle.interest;
-                            if !prev.is_writable() {
-                                let new = prev | Interest::EDGE_TRIGGERED | Interest::WRITE;
-                                handle.modify(new);
+                            if !handle.is_writable() {
+                                #[cfg(target_os = "linux")]
+                                let interest = Interest::EDGE_TRIGGERED | Interest::WRITE;
+
+                                #[cfg(any(
+                                    target_os = "macos",
+                                    target_os = "freebsd",
+                                    target_os = "dragonfly",
+                                    target_os = "openbsd",
+                                    target_os = "netbsd"
+                                ))]
+                                // Ensure we enable the registered `WRITE` event,
+                                // if the `IoHandle` we received was derived
+                                // from `TcpSocket::connect`.
+                                let interest = Interest::ENABLE | Interest::WRITE;
+
+                                handle.add_interest(interest);
                             }
                         }
                         None => {
+                            #[cfg(target_os = "linux")]
+                            let interest = Interest::EDGE_TRIGGERED | Interest::WRITE;
+
+                            #[cfg(any(
+                                target_os = "macos",
+                                target_os = "freebsd",
+                                target_os = "dragonfly",
+                                target_os = "openbsd",
+                                target_os = "netbsd"
+                            ))]
+                            let interest = Interest::WRITE;
+
                             self.handle = Some(context::with_handle(|h| {
-                                h.register_io(
-                                    self.inner.as_raw_fd(),
-                                    Interest::EDGE_TRIGGERED | Interest::WRITE,
-                                    cx.waker().clone(),
-                                )
+                                h.register_io(self.inner.as_raw_fd(), interest, cx.waker().clone())
                             }));
                         }
                     }

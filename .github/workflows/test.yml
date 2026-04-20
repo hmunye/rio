@@ -124,5 +124,9 @@ jobs:
       - name: cargo generate-lockfile
         if: hashFiles('Cargo.lock') == ''
         run: cargo generate-lockfile
-      - name: cargo test
+      - name: cargo test (non-Windows)
+        if: runner.os != 'Windows'
+        run: cargo test --locked --all-features --all-targets
+      - name: cargo test (Windows)
+        if: runner.os == 'Windows'
         run: cargo test --locked --features=time,macros -p rio
