@@ -33,7 +33,7 @@ impl Drop for BudgetGuard {
 
 /// Decrements the current execution budget, returning a [`BudgetGuard`] if
 /// allowed to proceed. Returns [`Poll::Pending`] if the budget is exhausted,
-/// yielding control to the runtime.
+/// yielding control to the scheduler.
 ///
 /// The budget is restored to its state prior to calling `poll_proceed` when the
 /// guard is dropped, unless committed using [`BudgetGuard::made_progress`]. It
@@ -74,7 +74,8 @@ impl Drop for BudgetGuard {
 ///
 ///     fn poll(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
 ///         while !self.is_complete() {
-///             // Ensure there is budget remaining to continue.
+///             // Ensure there is budget remaining to continue. This will yield
+///             // to the scheduler if no budget remains.
 ///             let coop = ready!(rio::task::coop::poll_proceed());
 ///
 ///             println!("task #{}: {}", self.id, self.current);
@@ -96,9 +97,7 @@ pub fn poll_proceed() -> Poll<BudgetGuard> {
 
         if budget.consume_unit() {
             let guard = BudgetGuard(b.clone());
-
             b.set(budget);
-
             Poll::Ready(guard)
         } else {
             context::with_handle(|handle| handle.defer_task(task::id()));

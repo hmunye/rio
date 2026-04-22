@@ -160,10 +160,13 @@ impl Task {
         };
 
         debug_assert!(
-            !matches!(self.state.set_stage(TaskStage::Running), TaskStage::Running),
-            "task #{} is already `Running` when polled",
-            self.state.id
+            self.state.is_pollable(),
+            "task #{}: can't be polled in state `{:?}`",
+            self.state.id,
+            self.state.stage
         );
+
+        self.state.set_stage(TaskStage::Running);
 
         let poll = self.fut.as_mut().poll(cx);
 

@@ -37,8 +37,6 @@ impl<F: Future> Future for Unconstrained<F> {
     }
 }
 
-impl<F> Unpin for Unconstrained<F> where F: Future + Unpin {}
-
 impl<F: Future> fmt::Debug for Unconstrained<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Unconstrained")
@@ -50,7 +48,7 @@ impl<F: Future> fmt::Debug for Unconstrained<F> {
 /// Disables cooperative scheduling constraints for the given future.
 ///
 /// Unlike [`Cooperative`], the wrapped future will __not__ be forced to yield
-/// control to the runtime. Failure to yield manually within an unconstrained
+/// control to the scheduler. Failure to yield manually within an unconstrained
 /// context can lead to __starvation__ of other tasks.
 ///
 /// # Examples
@@ -62,8 +60,9 @@ impl<F: Future> fmt::Debug for Unconstrained<F> {
 ///
 /// let fut = async {
 ///     for _ in 0..1_000_000 {
-///         // This will always be ready. If cooperative scheduling was in
-///         // effect, the task would be forced to yield periodically.
+///         // This will always resolve to `Poll::Ready`. If cooperative
+///         // scheduling was in effect, the task would be forced to yield
+///         // periodically.
 ///         future::ready(()).await;
 ///     }
 /// };

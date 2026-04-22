@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::task::Waker;
 use std::time::Instant;
 
-use crate::rt::time::{RawHandle, TimerEntry, TimerHandle};
+use crate::rt::time::{RawTimerHandle, TimerEntry, TimerHandle};
 
 /// Indexed priority queue for timer management.
 ///
@@ -12,8 +12,10 @@ use crate::rt::time::{RawHandle, TimerEntry, TimerHandle};
 /// its children.
 #[derive(Debug, Clone)]
 pub struct TimerHeap {
-    // Mapping from a `RawHandle` to its position in `buf`.
-    handles: HashMap<RawHandle, usize>,
+    // FIXME: Can we avoid using a `HashMap`?
+    //
+    // Mapping from a `RawTimerHandle` to its position in `buf`.
+    handles: HashMap<RawTimerHandle, usize>,
     // Contiguous buffer used for better cache-locality and index-based access.
     buf: Vec<TimerEntry>,
 }
@@ -49,15 +51,9 @@ impl Drop for HeapIter<'_> {
             let n = self.heap.len();
             let tail = self.heap.len() - self.curr;
 
-            // If few elements were iterated, it’s cheaper to `sift_up` each
-            // one individually. O(k log n) where `k` is the number of entries
-            // iterated over.
-            if tail * (usize::ilog2(n) as usize) < n {
-                for i in tail..n {
-                    self.heap.sift_up(0, i);
-                }
-            } else {
-                self.heap.rebuild();
+            // O(k log n) time, where `k` is the number of entries iterated.
+            for i in tail..n {
+                self.heap.sift_up(0, i);
             }
         }
     }
@@ -175,45 +171,17 @@ impl TimerHeap {
     #[allow(unused)]
     pub fn update_priority(&mut self, handle: &TimerHandle, deadline: Instant) -> bool {
         if let Some(&idx) = self.handles.get(&handle.0) {
-            let timer = &mut self.buf[idx];
-
-            return match timer.deadline.cmp(&deadline) {
-                Ordering::Less => {
-                    timer.deadline = deadline;
-                    self.sift_down(idx, self.len());
-                    true
-                }
-                Ordering::Equal => false,
-                Ordering::Greater => {
-                    timer.deadline = deadline;
-                    self.sift_up(0, idx);
-                    true
-                }
-            };
+            self.update_priority_at(idx, deadline)
+        } else {
+            false
         }
-
-        false
     }
 
     /// # Panics
     ///
-    /// Panics if `idx >= len`.
+    /// Panics if `idx >= heap.len()`.
     pub fn update_priority_with_idx(&mut self, idx: usize, deadline: Instant) -> bool {
-        let timer = &mut self.buf[idx];
-
-        match timer.deadline.cmp(&deadline) {
-            Ordering::Less => {
-                timer.deadline = deadline;
-                self.sift_down(idx, self.len());
-                true
-            }
-            Ordering::Equal => false,
-            Ordering::Greater => {
-                timer.deadline = deadline;
-                self.sift_up(0, idx);
-                true
-            }
-        }
+        self.update_priority_at(idx, deadline)
     }
 
     pub fn remove(&mut self, handle: &TimerHandle) -> Option<TimerEntry> {
@@ -238,11 +206,9 @@ impl TimerHeap {
     }
 
     pub fn get_mut(&mut self, handle: &TimerHandle) -> Option<(&mut TimerEntry, usize)> {
-        if let Some(&idx) = self.handles.get(&handle.0) {
-            return Some((&mut self.buf[idx], idx));
-        }
-
-        None
+        self.handles
+            .get(&handle.0)
+            .map(|&idx| (&mut self.buf[idx], idx))
     }
 
     #[allow(unused)]
@@ -258,8 +224,27 @@ impl TimerHeap {
         self.buf.is_empty()
     }
 
+    fn update_priority_at(&mut self, idx: usize, deadline: Instant) -> bool {
+        let timer = &mut self.buf[idx];
+
+        match timer.deadline.cmp(&deadline) {
+            Ordering::Less => {
+                timer.deadline = deadline;
+                self.sift_down(idx, self.len());
+                true
+            }
+            Ordering::Equal => false,
+            Ordering::Greater => {
+                timer.deadline = deadline;
+                self.sift_up(0, idx);
+                true
+            }
+        }
+    }
+
     /// Restores the min-heap invariant for the entire heap, fixing any
     /// violations.
+    #[allow(unused)]
     fn rebuild(&mut self) {
         let mut pos = self.len() / 2;
 
@@ -372,10 +357,10 @@ mod tests {
     use std::task::Waker;
     use std::time::Duration;
 
-    // NOTE: These tests are wrapped in `rt!` macro since `TimerHandle::Drop`
-    // relies on a runtime context to cancel associated timers. We create a
-    // separate `TimerHeap` instance for testing the heap logic, but the Drop
-    // impl still attempts to cancel on the runtime's `TimerHeap` (noop).
+    // NOTE: Tests are wrapped in `rt!` macro since `TimerHandle::Drop` relies
+    // on a runtime context to cancel associated timers. We create a separate
+    // `TimerHeap` instance for testing the heap logic, but the Drop impl still
+    // attempts to cancel on the runtime's `TimerHeap` (noop).
 
     #[test]
     fn test_new() {
@@ -734,7 +719,9 @@ mod tests {
 
             assert_eq!(heap.len(), 3);
             assert!(!heap.is_empty());
-            assert_eq!(heap.peek().expect("heap should be non-empty").deadline, deadlines[0]);
+            assert_eq!(heap.pop().expect("heap should be non-empty").deadline, deadlines[0]);
+            assert_eq!(heap.pop().expect("heap should be non-empty").deadline, deadlines[2]);
+            assert_eq!(heap.pop().expect("heap should be non-empty").deadline, deadlines[1]);
         }
     }
 

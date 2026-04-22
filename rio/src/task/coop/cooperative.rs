@@ -33,7 +33,6 @@ impl<F: Future> Future for Cooperative<F> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let coop = ready!(coop::poll_proceed());
-
         let me = self.project();
 
         if let Poll::Ready(ret) = me.fut.poll(cx) {
@@ -44,8 +43,6 @@ impl<F: Future> Future for Cooperative<F> {
         }
     }
 }
-
-impl<F> Unpin for Cooperative<F> where F: Future + Unpin {}
 
 impl<F: Future> fmt::Debug for Cooperative<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -58,7 +55,7 @@ impl<F: Future> fmt::Debug for Cooperative<F> {
 /// Enables cooperative scheduling constraints for the given future.
 ///
 /// Unlike [`Unconstrained`], the wrapped future __may__ be forced to yield
-/// control to the runtime. This avoids __starvation__, as the task will yield
+/// control to the scheduler. This avoids __starvation__, as the task will yield
 /// periodically to allow other ready tasks to make progress.
 ///
 /// # Panics
@@ -75,8 +72,8 @@ impl<F: Future> fmt::Debug for Cooperative<F> {
 ///
 /// let fut = async {
 ///     for _ in 0..1_000_000 {
-///         // This will always be ready. If cooperative scheduling was not in
-///         // effect (i.e., using `rio::task::coop::make_unconstrained`), the
+///         // This will always return `Poll::Ready`. If cooperative scheduling
+///         // was not in effect (`rio::task::coop::make_unconstrained`), the
 ///         // task would not be forced to yield.
 ///         future::ready(()).await;
 ///     }

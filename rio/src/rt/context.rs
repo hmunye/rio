@@ -8,10 +8,9 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// Returns how much execution budget has been consumed since the snapshot
-    /// was last updated, or `0` if either the snapshot budget or the provided
-    /// `budget` is _unconstrained_.
-    pub fn used_since(&self) -> u8 {
+    /// Returns the execution budget used since the last snapshot update, or `0`
+    /// if either the current or snapshot budget is _unconstrained_.
+    pub fn budget_used_since_snapshot(&self) -> u8 {
         with_budget(|b| match (self.budget.val(), b.get().val()) {
             (Some(snap), Some(curr)) => {
                 debug_assert!(
@@ -33,10 +32,11 @@ struct Context {
     ///
     /// [`Id`]: task::Id
     task_id: Cell<Option<task::Id>>,
-    /// Tracks the remaining execution budget for the current "tick" on the
-    /// current thread, before tasks need to yield control to the runtime.
+    /// Tracks the execution budget for the current scheduler "tick" on the
+    /// current thread.
     budget: Cell<Budget>,
-    /// Per-task execution context snapshot for the current thread.
+    /// Per-task execution context for the current thread, captured before
+    /// polling.
     snapshot: RefCell<Snapshot>,
 }
 
@@ -76,7 +76,7 @@ pub fn set_handle(handle: &rt::Handle) {
     CONTEXT.with(|cx| {
         assert!(
             cx.handle.replace(Some(handle.clone())).is_none(),
-            "cannot enter runtime: a runtime context is already active on this thread"
+            "runtime context is already set for the current thread"
         );
     });
 }

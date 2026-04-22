@@ -9,6 +9,9 @@ Minimal Asynchronous Runtime for Rust.
 [![Build Status](https://github.com/hmunye/rio/workflows/CI/badge.svg)](https://github.com/hmunye/rio/actions?query=workflow%3ACI+branch%3Amain)
 [![Dependency Status](https://deps.rs/repo/github/hmunye/rio/status.svg)](https://deps.rs/repo/github/hmunye/rio)
 
+`rio` is a single-threaded asynchronous runtime built to explore how Rust’s
+`async/await` works under the hood.
+
 ## Quick Start
 
 Add `rio` to your project as a dependency:

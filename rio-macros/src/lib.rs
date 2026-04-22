@@ -153,7 +153,7 @@ pub fn test(_attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     if !sig.inputs.is_empty() {
-        return syn::Error::new_spanned(&sig.inputs, "test function cannot accept arguments")
+        return syn::Error::new_spanned(&sig.inputs, "test functions cannot accept arguments")
             .to_compile_error()
             .into();
     }

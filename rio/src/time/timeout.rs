@@ -18,14 +18,14 @@ impl fmt::Display for Elapsed {
 
 impl std::error::Error for Elapsed {}
 
-/// Wraps a `Future`, restricting its execution time to `duration`.
+/// Wraps a `Future`, limiting its execution time to `duration`.
 ///
-/// If the provided future completes before `duration` has elapsed, its value is
-/// yielded; otherwise, an [`error`](Elapsed) is returned and the future is
+/// If the provided future completes before `duration` has elapsed, its output
+/// is yielded; otherwise, an [`error`](Elapsed) is returned and the future is
 /// canceled. The `Timeout` is canceled by dropping it.
 ///
 /// If the provided future is ready immediately, the `Timeout` is guaranteed to
-/// yield the futures value no matter the provided duration.
+/// yield the futures output regardless of the provided [`Duration`].
 ///
 /// # Panics
 ///
@@ -52,19 +52,19 @@ where
     F: IntoFuture,
 {
     Timeout {
-        val: fut.into_future(),
+        fut: fut.into_future(),
         delay: time::sleep(duration),
     }
 }
 
-/// Wraps a `Future`, restricting its execution time until `deadline`.
+/// Wraps a `Future`, limiting its execution time until `deadline`.
 ///
-/// If the provided future completes before `deadline` is reached, its value is
-/// yielded; otherwise, an [`error`](Elapsed) is returned and the future is
+/// If the provided future completes before `deadline` is reached, its output
+/// is yielded; otherwise, an [`error`](Elapsed) is returned and the future is
 /// canceled. The `Timeout` is canceled by dropping it.
 ///
 /// If the provided future is ready immediately, the `Timeout` is guaranteed to
-/// yield the futures value no matter the provided deadline.
+/// yield the futures output regardless of the provided [`Instant`].
 ///
 /// # Panics
 ///
@@ -91,7 +91,7 @@ where
     F: IntoFuture,
 {
     Timeout {
-        val: fut.into_future(),
+        fut: fut.into_future(),
         delay: time::sleep_until(deadline),
     }
 }
@@ -100,15 +100,13 @@ where
 #[derive(Debug)]
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct Timeout<F> {
-    val: F,
+    fut: F,
     delay: Sleep,
 }
 
-impl<F> Unpin for Timeout<F> where F: Unpin {}
-
 /// Projection type providing a "view" over a `Timeout<F>`.
 struct TimeoutProj<'p, F> {
-    val: Pin<&'p mut F>,
+    fut: Pin<&'p mut F>,
     delay: Pin<&'p mut Sleep>,
 }
 
@@ -121,7 +119,7 @@ impl<F> Timeout<F> {
             let me = self.get_unchecked_mut();
 
             TimeoutProj {
-                val: Pin::new_unchecked(&mut me.val),
+                fut: Pin::new_unchecked(&mut me.fut),
                 delay: Pin::new_unchecked(&mut me.delay),
             }
         }
@@ -136,7 +134,7 @@ impl<F: Future> Future for Timeout<F> {
         let me = self.project();
         let budget_before = coop::has_budget_remaining();
 
-        if let Poll::Ready(out) = me.val.poll(cx) {
+        if let Poll::Ready(out) = me.fut.poll(cx) {
             return Poll::Ready(Ok(out));
         }
 
@@ -146,19 +144,18 @@ impl<F: Future> Future for Timeout<F> {
 
 // <https://docs.rs/tokio/latest/src/tokio/time/timeout.rs.html#212>
 fn poll_delay(budget_before: bool, delay: Pin<&mut Sleep>, cx: &mut Context<'_>) -> Poll<Elapsed> {
-    let poll = || match delay.poll(cx) {
+    let delay_poll = || match delay.poll(cx) {
         Poll::Ready(()) => Poll::Ready(Elapsed(())),
         Poll::Pending => Poll::Pending,
     };
 
     if budget_before && !coop::has_budget_remaining() {
-        // `delay` is cooperative, so it should be polled with an unconstrained
+        // `delay` is cooperative, so it must be polled with an unconstrained
         // execution budget, since the wrapped future has already exhausted the
-        // current "tick"'s budget. This ensures it has a chance to actually
-        // execute.
-        coop::with_unconstrained(poll)
+        // current budget. This ensures `delay` has a chance to execute.
+        coop::with_unconstrained(delay_poll)
     } else {
-        poll()
+        delay_poll()
     }
 }
 
@@ -166,15 +163,14 @@ fn poll_delay(budget_before: bool, delay: Pin<&mut Sleep>, cx: &mut Context<'_>)
 mod tests {
     use super::*;
 
-    use crate::rt::context;
     use crate::rt::time::clock;
+    use crate::rt::{Handle, context};
 
     #[cfg(not(miri))]
     const THRESHOLD_MS: u64 = 5;
 
     fn rt_timer_count() -> usize {
-        #[allow(clippy::redundant_closure_for_method_calls)]
-        context::with_handle(|handle| handle.timers())
+        context::with_handle(Handle::timers)
     }
 
     #[test]

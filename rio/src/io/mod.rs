@@ -14,7 +14,9 @@ pub use async_read::{AsyncRead, AsyncReadExt};
 mod async_write;
 pub use async_write::{AsyncWrite, AsyncWriteExt};
 
+mod flush;
 mod read;
+mod read_exact;
 mod shutdown;
 mod write;
 mod write_all;

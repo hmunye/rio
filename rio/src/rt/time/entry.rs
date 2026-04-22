@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::task::Waker;
 use std::time::Instant;
 
-use crate::rt::time::RawHandle;
+use crate::rt::time::RawTimerHandle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
@@ -14,13 +14,13 @@ enum State {
 pub struct TimerEntry {
     pub deadline: Instant,
     pub waker: Waker,
-    pub raw_handle: RawHandle,
+    pub raw_handle: RawTimerHandle,
     state: State,
 }
 
 impl TimerEntry {
     #[must_use]
-    pub const fn new(deadline: Instant, waker: Waker, raw_handle: RawHandle) -> Self {
+    pub const fn new(deadline: Instant, waker: Waker, raw_handle: RawTimerHandle) -> Self {
         Self {
             deadline,
             waker,

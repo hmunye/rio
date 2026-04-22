@@ -1,4 +1,5 @@
-use std::{cell::Cell, time::Instant};
+use std::cell::Cell;
+use std::time::Instant;
 
 use crate::rt::context;
 
@@ -10,20 +11,20 @@ thread_local! {
 /// Opaque identifier for a timer relative to all other timers.
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(transparent)]
-pub struct RawHandle(u64);
+pub struct RawTimerHandle(u64);
 
-/// Handle to a timer returned by [`Driver::register_timer`].
+/// Handle to a timer entry returned by [`Driver::register_timer`].
 ///
 /// Cancels the associated timer on `Drop`.
 ///
 /// [`Driver::register_timer`]: crate::rt::time::Driver::register_timer
 #[derive(Debug, PartialEq, Eq)]
-pub struct TimerHandle(pub RawHandle);
+pub struct TimerHandle(pub RawTimerHandle);
 
 impl TimerHandle {
     #[must_use]
     pub fn next() -> Self {
-        TimerHandle(RawHandle(IDS.replace(IDS.get() + 1)))
+        TimerHandle(RawTimerHandle(IDS.replace(IDS.get() + 1)))
     }
 
     pub fn reset(&self, deadline: Instant) -> bool {

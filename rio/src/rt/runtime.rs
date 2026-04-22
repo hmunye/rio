@@ -2,8 +2,8 @@ use crate::rt::{Handle, context};
 
 /// `rio` Runtime.
 ///
-/// Provides a single-threaded task scheduler and time driver, necessary for
-/// running asynchronous [`tasks`].
+/// Provides a single-threaded task scheduler, time driver, and I/O driver,
+/// necessary for running asynchronous [`tasks`].
 ///
 /// [`tasks`]: crate::task
 #[derive(Debug)]
@@ -30,8 +30,10 @@ impl Runtime {
     }
 
     /// Runs the provided future to completion, serving as the runtime entry
-    /// point. This function blocks the current thread until `fut` has resolved,
-    /// returning it's output.
+    /// point. The current thread will remain blocked until `fut` and any
+    /// tasks [`spawned`] from it complete, unless [`shutdown`] is called.
+    ///
+    /// Returns the output of `fut`.
     ///
     /// # Panics
     ///
@@ -51,6 +53,8 @@ impl Runtime {
     ///
     /// assert_eq!(res, "hello, world");
     /// ```
+    ///
+    /// [`spawned`]: crate::spawn
     #[inline]
     pub fn block_on<F: Future + 'static>(&self, fut: F) -> F::Output {
         self.handle.block_on(fut)
@@ -63,11 +67,11 @@ impl Default for Runtime {
     }
 }
 
-/// Signals to the runtime to begin shutting down, without waiting for any
-/// spawned tasks to complete.
+/// Signals the runtime to begin shutting down, without waiting for any spawned
+/// tasks to complete.
 ///
 /// Only the future provided to `Runtime::block_on` will be guaranteed to
-/// complete before the runtime is shutdown.
+/// complete before shutdown.
 ///
 /// # Panics
 ///

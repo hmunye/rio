@@ -9,7 +9,7 @@ thread_local! {
     static IDS: Cell<u64> = const { Cell::new(0) };
 }
 
-/// Opaque identifier for an I/O resource relative to all other resources.
+/// Opaque identifier for an I/O resource relative to all other I/O resources.
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(transparent)]
 pub struct PollToken(u64);
@@ -33,17 +33,17 @@ impl From<PollToken> for u64 {
     }
 }
 
-/// Handle to an I/O resource returned by [`Driver::register`].
+/// Handle to an I/O resource returned by [`Driver::register_io`].
 ///
 /// Deregisters the associated I/O resource on `Drop`. The caller is responsible
 /// for closing the file descriptor of the I/O resource.
 ///
-/// [`Driver::register`]: crate::rt::io::Driver::register
+/// [`Driver::register_io`]: crate::rt::io::Driver::register_io
 #[derive(Debug)]
 pub struct IoHandle {
-    pub(crate) fd: RawFd,
-    pub(crate) interest: Interest,
-    pub(crate) token: PollToken,
+    pub fd: RawFd,
+    pub interest: Interest,
+    pub token: PollToken,
     #[cfg(any(
         target_os = "macos",
         target_os = "freebsd",
@@ -51,13 +51,11 @@ pub struct IoHandle {
         target_os = "openbsd",
         target_os = "netbsd"
     ))]
-    /// Bitmask tracking which filter types are currently registered for this
-    /// handle. `kqueue(2)` supports multiple filters (e.g., `EVFILT_READ`,
-    /// `EVFILT_WRITE`) per _ident_, each identified by an (_ident_, _filter_)
-    /// pair.
+    /// Bitmask of active `kqueue(2)` filters for this handle. Each filter is
+    /// uniquely identified by its (_ident_, _filter_) pair.
     ///
-    /// Avoids redundant `kevent(2)` registrations for filters that are already
-    /// active.
+    /// Prevents redundant `kevent(2)` registrations for filters that are
+    /// already active.
     events_set: u8,
 }
 
@@ -97,8 +95,8 @@ impl IoHandle {
         }
     }
 
-    /// Combines the provided `Interest` with the current, updating its entry
-    /// within the I/O driver.
+    /// Combines the provided `Interest` with the current set, updating its I/O
+    /// driver entry.
     pub fn add_interest(&mut self, interest: Interest) {
         #[cfg(any(
             target_os = "macos",
@@ -123,10 +121,9 @@ impl IoHandle {
 
     /// Returns `true` if this `IoHandle` is readable.
     ///
-    /// On epoll-based platforms, this reflects the current interest value. On
-    /// kqueue-based platforms (macOS, FreeBSD, etc.), this reflects whether a
-    /// read filter is currently registered, since multiple filters can exist
-    /// per handle.
+    /// On epoll-based platforms (Linux), this reflects the current interest
+    /// set. On kqueue-based platforms (macOS, FreeBSD, etc.), this reflects
+    /// if a read filter is currently active.
     pub const fn is_readable(&self) -> bool {
         #[cfg(target_os = "linux")]
         return self.interest.is_readable();
@@ -143,10 +140,9 @@ impl IoHandle {
 
     /// Returns `true` if this `IoHandle` is writable.
     ///
-    /// On epoll-based platforms, this reflects the current interest value. On
-    /// kqueue-based platforms (macOS, FreeBSD, etc.), this reflects whether a
-    /// write filter is currently registered, since multiple filters can exist
-    /// per handle.
+    /// On epoll-based platforms (Linux), this reflects the current interest
+    /// set. On kqueue-based platforms (macOS, FreeBSD, etc.), this reflects
+    /// if a write filter is currently active.
     pub const fn is_writable(&self) -> bool {
         #[cfg(target_os = "linux")]
         return self.interest.is_writable();

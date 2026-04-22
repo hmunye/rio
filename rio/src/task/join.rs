@@ -8,18 +8,18 @@ use std::task::{Context, Poll, ready};
 use crate::rt::task::{TaskStage, TaskState};
 use crate::task::{self, coop};
 
-#[non_exhaustive]
-enum InnerJoinErr {
-    /// Task was canceled before retaining the expected output.
-    Canceled,
-    /// Task panicked before retaining the expected output.
-    Panic(Box<dyn Any + Send>),
-}
-
 /// Error indicating a task failed to execute to completion.
 pub struct JoinError {
     id: task::Id,
-    err: InnerJoinErr,
+    err: Repr,
+}
+
+#[non_exhaustive]
+enum Repr {
+    /// Task was canceled before resolving to the expected output.
+    Canceled,
+    /// Task panicked before resolving to the expected output.
+    Panic(Box<dyn Any + Send>),
 }
 
 impl JoinError {
@@ -52,7 +52,6 @@ impl JoinError {
     /// .unwrap_err();
     ///
     /// if err.is_panic() {
-    ///     // Resume the panic on the current thread.
     ///     panic::resume_unwind(err.into_panic());
     /// }
     /// # }
@@ -81,7 +80,6 @@ impl JoinError {
     /// .unwrap_err();
     ///
     /// if let Ok(reason) = err.try_into_panic() {
-    ///     // Resume the panic on the current thread.
     ///     panic::resume_unwind(reason);
     /// }
     /// # }
@@ -90,8 +88,8 @@ impl JoinError {
     #[allow(clippy::missing_errors_doc)]
     pub fn try_into_panic(self) -> Result<Box<dyn Any + Send>, JoinError> {
         match self.err {
-            InnerJoinErr::Panic(reason) => Ok(reason),
-            InnerJoinErr::Canceled => Err(self),
+            Repr::Panic(reason) => Ok(reason),
+            Repr::Canceled => Err(self),
         }
     }
 
@@ -99,21 +97,21 @@ impl JoinError {
     #[inline]
     #[must_use]
     pub const fn is_panic(&self) -> bool {
-        matches!(&self.err, InnerJoinErr::Panic(_))
+        matches!(&self.err, Repr::Panic(_))
     }
 
     /// Returns `true` if the error was caused by the task being canceled.
     #[inline]
     #[must_use]
     pub const fn is_canceled(&self) -> bool {
-        matches!(&self.err, InnerJoinErr::Canceled)
+        matches!(&self.err, Repr::Canceled)
     }
 
     /// # Panics
     ///
     /// Panics if the `JoinError` does not represent a _panic_.
     fn get_panic_message(&self) -> &str {
-        if let InnerJoinErr::Panic(reason) = &self.err {
+        if let Repr::Panic(reason) = &self.err {
             reason.downcast_ref::<&'static str>().map_or_else(
                 || {
                     reason
@@ -131,8 +129,8 @@ impl JoinError {
 impl fmt::Display for JoinError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.err {
-            InnerJoinErr::Canceled => write!(f, "[task #{}]: canceled", self.id),
-            InnerJoinErr::Panic(_) => write!(
+            Repr::Canceled => write!(f, "[task #{}]: canceled", self.id),
+            Repr::Panic(_) => write!(
                 f,
                 "[task #{}]: panicked with: {}",
                 self.id,
@@ -145,8 +143,8 @@ impl fmt::Display for JoinError {
 impl fmt::Debug for JoinError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.err {
-            InnerJoinErr::Canceled => write!(f, "JoinError::Canceled {{ Id: Id({}) }}", self.id),
-            InnerJoinErr::Panic(_) => write!(
+            Repr::Canceled => write!(f, "JoinError::Canceled {{ Id: Id({}) }}", self.id),
+            Repr::Panic(_) => write!(
                 f,
                 "JoinError::Panic {{ Id: Id({}), Reason: {:?} }}",
                 self.id,
@@ -179,6 +177,8 @@ impl std::error::Error for JoinError {}
 /// [`std::thread::JoinHandle`]: std::thread::JoinHandle
 #[derive(Debug)]
 pub struct JoinHandle<T> {
+    // NOTE: Stores an `Rc` (not `Weak`) so the task’s output remains accessible
+    // even when the task is dropped after completion.
     pub(crate) state: Rc<TaskState>,
     pub(crate) _marker: PhantomData<T>,
 }
@@ -201,8 +201,8 @@ impl<T> JoinHandle<T> {
 
     /// Cancels the associated task.
     ///
-    /// If the task has not yet completed, awaiting the handle will fail with a
-    /// [`canceled`] error.
+    /// If the task has not yet completed, awaiting this `JoinHandle` will
+    /// resolve with a [`canceled`] error.
     ///
     /// # Examples
     ///
@@ -242,6 +242,7 @@ impl<T> JoinHandle<T> {
             self.id()
         );
 
+        // Ensures we don't overwrite a terminal stage.
         if self.state.is_incomplete() {
             self.state.set_stage(TaskStage::Canceled);
         }
@@ -291,7 +292,7 @@ impl<T: 'static> JoinHandle<T> {
     /// # Panics
     ///
     /// Panics if the task's output cannot be downcast to `T` or if there is no
-    /// output in the current task stage.
+    /// output retained by the current task stage.
     pub(crate) fn take_output(&self) -> Result<T, JoinError> {
         debug_assert!(
             !self.state.is_detached(),
@@ -313,11 +314,11 @@ impl<T: 'static> JoinHandle<T> {
             }
             TaskStage::Canceled => Err(JoinError {
                 id: self.id(),
-                err: InnerJoinErr::Canceled,
+                err: Repr::Canceled,
             }),
             TaskStage::Panic(reason) => Err(JoinError {
                 id: self.id(),
-                err: InnerJoinErr::Panic(reason),
+                err: Repr::Panic(reason),
             }),
             stage => panic!(
                 "[task #{}]: cannot take output; no output retained in stage: `{stage:?}`",

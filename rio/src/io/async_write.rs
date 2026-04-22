@@ -2,6 +2,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{io, ops};
 
+use crate::io::flush::{Flush, flush};
 use crate::io::shutdown::{Shutdown, shutdown};
 use crate::io::write::{Write, write};
 use crate::io::write_all::{WriteAll, write_all};
@@ -99,7 +100,7 @@ pub trait AsyncWriteExt: AsyncWrite {
     ///
     /// # Errors
     ///
-    /// Returns an I/O error if encountered. Partial writes are **not**
+    /// Returns an I/O error if encountered. Partial writes are __not__
     /// considered an error.
     fn write<'a>(&'a mut self, src: &'a [u8]) -> Write<'a, Self>
     where
@@ -124,23 +125,30 @@ pub trait AsyncWriteExt: AsyncWrite {
         write_all(self, src)
     }
 
-    /// TODO:
-    fn flush(&mut self) -> ()
-    where
-        Self: Unpin,
-    {
-        todo!()
-    }
-
-    /// Initiates a graceful shutdown of this writer.
-    ///
-    /// Similar to [`flush`], all intermediately buffered content is written to
-    /// the underlying stream. Once the operation completes, the caller should
-    /// no longer attempt to write to the stream.
+    /// Flushes this writer, ensuring that all buffered contents reach their
+    /// destination.
     ///
     /// # Errors
     ///
     /// Returns an I/O error if encountered.
+    fn flush(&mut self) -> Flush<'_, Self>
+    where
+        Self: Unpin,
+    {
+        flush(self)
+    }
+
+    /// Initiates a graceful shutdown of this writer.
+    ///
+    /// Similar to [`flush`], all buffered content is written to the underlying
+    /// stream. Once the operation completes, the caller should no longer
+    /// attempt to write to the stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if encountered.
+    ///
+    /// [`flush`]: AsyncWriteExt::flush
     fn shutdown(&mut self) -> Shutdown<'_, Self>
     where
         Self: Unpin,

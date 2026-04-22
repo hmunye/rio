@@ -73,8 +73,7 @@ impl Handle {
                 match res {
                     Ok(out) => {
                         if state.is_detached() {
-                            // No handle exists; mark as consumed and drop
-                            // output.
+                            // No handle exists; mark as consumed, drop output.
                             state.set_stage(TaskStage::Consumed);
                         } else {
                             // Handle exists; retain the output.
@@ -82,6 +81,7 @@ impl Handle {
                         }
                     }
                     Err(panic) => {
+                        // Panic caught; retain payload.
                         state.set_stage(TaskStage::Panic(panic));
                     }
                 }
@@ -92,18 +92,16 @@ impl Handle {
             }
         });
 
-        // NOTE: Returns an `Rc` (not `Weak`) so the task’s output remains
-        // accessible even when the task is dropped.
         let state = Rc::clone(&task.state);
-
         self.scheduler.spawn(task, Rc::downgrade(&self.scheduler));
-
         state
     }
 
     pub fn defer_task(&self, id: task::Id) {
-        self.scheduler
-            .defer_task(id, context::with_snapshot(context::Snapshot::used_since));
+        self.scheduler.defer_task(
+            id,
+            context::with_snapshot(context::Snapshot::budget_used_since_snapshot),
+        );
     }
 
     pub fn signal_shutdown(&self) {
@@ -156,15 +154,24 @@ cfg_io! {
         }
 
         pub fn register_io(&self, fd: RawFd, interest: Interest, waker: Waker) -> IoHandle {
-            self.io.register(fd, interest, waker)
+            self.io.register_io(fd, interest, waker)
         }
 
         pub fn update_interest_io(&self, handle: &IoHandle) {
-            self.io.update_interest(handle);
+            self.io.update_interest_io(handle);
         }
 
         pub fn deregister_io(&self, handle: &IoHandle) {
-            self.io.deregister(handle);
+            self.io.deregister_io(handle);
+        }
+    }
+
+    cfg_test! {
+        #[cfg(not(miri))]
+        impl Handle {
+            pub fn io_resources(&self) -> usize {
+                self.io.io_resources()
+            }
         }
     }
 }

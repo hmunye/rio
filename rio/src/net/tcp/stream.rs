@@ -81,6 +81,7 @@ impl TcpStream {
     /// # Ok(())
     /// # }
     /// ```
+    #[inline]
     pub async fn connect<A: ToSocketAddrs>(addr: A) -> io::Result<TcpStream> {
         let addrs = addr.to_socket_addrs()?;
         let mut last_err = None;
@@ -297,8 +298,9 @@ cfg_linux! {
 
         /// Sets the value for the `TCP_QUICKACK` option on this socket
         ///
-        /// This flag causes Linux to eagerly send `ACK`s rather than delaying them.
-        /// Linux may reset this flag after further operations on the socket.
+        /// This flag causes Linux to eagerly send `ACK`s rather than delaying
+        /// them. Linux may reset this flag after further operations on the
+        /// socket.
         ///
         /// See [`man 7 tcp`](https://man7.org/linux/man-pages/man7/tcp.7.html) and
         /// [TCP delayed acknowledgement](https://en.wikipedia.org/wiki/TCP_delayed_acknowledgment)
@@ -335,9 +337,6 @@ impl AsyncRead for TcpStream {
         use std::io::Read;
 
         let coop = ready!(coop::poll_proceed());
-
-        // Ensure we fully drain the stream until `read` returns `EAGAIN`
-        // (`WouldBlock`).
         let mut read = 0;
 
         loop {
@@ -417,9 +416,6 @@ impl AsyncWrite for TcpStream {
         use std::io::Write;
 
         let coop = ready!(coop::poll_proceed());
-
-        // Ensure we fully drain the stream until `write` returns `EAGAIN`
-        // (`WouldBlock`).
         let mut written = 0;
 
         loop {
@@ -450,8 +446,8 @@ impl AsyncWrite for TcpStream {
                                     target_os = "openbsd",
                                     target_os = "netbsd"
                                 ))]
-                                // Ensure we enable the registered `WRITE` event,
-                                // if the `IoHandle` we received was derived
+                                // Ensure we enable the registered `WRITE`
+                                // event, if the `IoHandle` stored was derived
                                 // from `TcpSocket::connect`.
                                 let interest = Interest::ENABLE | Interest::WRITE;
 
@@ -502,6 +498,353 @@ impl AsyncWrite for TcpStream {
             // <https://docs.rs/tokio/latest/src/tokio/net/tcp/stream.rs.html#1130>
             Err(e) if e.kind() == io::ErrorKind::NotConnected => Poll::Ready(Ok(())),
             Err(e) => Poll::Ready(Err(e)),
+        }
+    }
+}
+
+#[cfg(all(test, not(miri)))]
+mod tests {
+    use super::*;
+
+    use crate::io::{AsyncReadExt, AsyncWriteExt};
+    use crate::net::TcpListener;
+    use crate::rt::Handle;
+    use crate::rt::time::clock;
+    use crate::task::JoinHandle;
+
+    const THRESHOLD_MS: u64 = 5;
+
+    enum OnConnect {
+        WriteBytes(usize),
+        ReadBytes(usize),
+        Delay(Duration),
+        Shutdown,
+    }
+
+    async fn spawn_listener(
+        actions: Vec<OnConnect>,
+    ) -> io::Result<(JoinHandle<io::Result<()>>, SocketAddr)> {
+        let ln = TcpListener::bind("127.0.0.1:0").await?;
+        let addr = ln.local_addr()?;
+
+        let handle = crate::spawn(async move {
+            let (mut socket, _) = ln.accept().await?;
+            let mut buf = [0u8; 1024];
+
+            for action in actions {
+                match action {
+                    OnConnect::WriteBytes(n) => {
+                        socket.write("1".repeat(n).as_bytes()).await?;
+                    }
+                    OnConnect::ReadBytes(n) => {
+                        socket.read_exact(&mut buf[..n]).await?;
+                    }
+                    OnConnect::Delay(d) => {
+                        crate::time::sleep(d).await;
+                    }
+                    OnConnect::Shutdown => {
+                        socket.shutdown().await?;
+                    }
+                }
+            }
+
+            Ok::<(), io::Error>(())
+        });
+
+        Ok((handle, addr))
+    }
+
+    #[allow(clippy::future_not_send)]
+    async fn setup_stream(
+        commands: Vec<OnConnect>,
+    ) -> io::Result<(JoinHandle<io::Result<()>>, TcpStream)> {
+        let (handle, addr) = spawn_listener(commands).await?;
+        let stream = TcpStream::connect(addr).await?;
+
+        assert!(context::with_handle(Handle::io_resources) > 0);
+
+        Ok((handle, stream))
+    }
+
+    #[test]
+    fn test_pending_read() {
+        rt! {
+            let mut buf = [0u8; 10];
+            let (handle, mut stream) = setup_stream(vec![
+                OnConnect::Delay(Duration::from_millis(100)),
+            ])
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+
+            let mut read = stream.read(&mut buf);
+
+            {
+                let mut pinned = unsafe { Pin::new_unchecked(&mut read) };
+                let mut cx = Context::from_waker(std::task::Waker::noop());
+                assert!(pinned.as_mut().poll(&mut cx).is_pending());
+            }
+
+            clock::advance(Duration::from_millis(100)).await;
+
+            drop(stream);
+            assert!(handle.await.is_ok());
+
+            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_read() {
+        rt! {
+            let mut buf = [0u8; 10];
+            let (handle, mut stream) = setup_stream(vec![
+                OnConnect::WriteBytes(buf.len() * 2),
+                OnConnect::Delay(Duration::from_millis(100)),
+            ])
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+
+            assert_eq!(
+                stream.read(&mut buf).await.unwrap_or_else(|e| panic!("{e}")),
+                buf.len()
+            );
+
+            clock::advance(Duration::from_millis(100)).await;
+
+            drop(stream);
+            assert!(handle.await.is_ok());
+
+            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_eof_read() {
+        rt! {
+            let mut buf = [0u8; 10];
+            let (handle, mut stream) = setup_stream(vec![
+                OnConnect::WriteBytes(buf.len() / 2),
+                OnConnect::Shutdown,
+            ])
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+
+            assert_eq!(
+                stream
+                    .read(&mut buf)
+                    .await
+                    .unwrap_or_else(|e| panic!("{e}")),
+                buf.len() / 2
+            );
+
+            assert_eq!(
+                stream
+                    .read(&mut buf)
+                    .await
+                    .unwrap_or_else(|e| panic!("{e}")),
+                0
+            );
+
+            drop(stream);
+            assert!(handle.await.is_ok());
+
+            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_pending_read_exact() {
+        rt! {
+            let mut buf = [0u8; 10];
+            let (handle, mut stream) = setup_stream(vec![
+                OnConnect::WriteBytes(buf.len() / 2),
+                OnConnect::Delay(Duration::from_millis(100)),
+            ])
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+
+            {
+                let mut read_exact = stream.read_exact(&mut buf);
+                let mut pinned = unsafe { Pin::new_unchecked(&mut read_exact) };
+                let mut cx = Context::from_waker(std::task::Waker::noop());
+                assert!(pinned.as_mut().poll(&mut cx).is_pending());
+            }
+
+            clock::advance(Duration::from_millis(100)).await;
+
+            drop(stream);
+            assert!(handle.await.is_ok());
+
+            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_partial_read_exact() {
+        rt! {
+            let mut buf = [0u8; 10];
+            let (handle, mut stream) = setup_stream(vec![
+                OnConnect::WriteBytes(buf.len() / 2),
+                OnConnect::Delay(Duration::from_millis(100)),
+                OnConnect::WriteBytes(buf.len() / 2),
+                OnConnect::Delay(Duration::from_millis(100)),
+            ])
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+
+            let mut read_exact = stream.read_exact(&mut buf);
+
+            {
+                let mut pinned = unsafe { Pin::new_unchecked(&mut read_exact) };
+                let mut cx = Context::from_waker(std::task::Waker::noop());
+                assert!(pinned.as_mut().poll(&mut cx).is_pending());
+            }
+
+            clock::advance(Duration::from_millis(100)).await;
+
+            assert_eq!(
+                read_exact
+                    .await
+                    .unwrap_or_else(|e| panic!("{e}")),
+                buf.len()
+            );
+
+            clock::advance(Duration::from_millis(100)).await;
+
+            drop(stream);
+            assert!(handle.await.is_ok());
+
+            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_eof_read_exact() {
+        rt! {
+            let mut buf = [0u8; 10];
+            let (handle, mut stream) = setup_stream(vec![
+                OnConnect::WriteBytes(buf.len() / 2),
+                OnConnect::Shutdown,
+            ])
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+
+            assert_eq!(
+                stream
+                    .read_exact(&mut buf)
+                    .await
+                    .expect_err("should be EOF")
+                    .kind(),
+                io::ErrorKind::UnexpectedEof
+            );
+
+            drop(stream);
+            assert!(handle.await.is_ok());
+
+            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_read_after_shutdown() {
+        rt! {
+            let mut buf = [0u8; 10];
+            let (handle, mut stream) = setup_stream(vec![
+                OnConnect::WriteBytes(buf.len() / 2),
+                OnConnect::Shutdown,
+            ])
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+
+            assert_eq!(
+                stream
+                    .read(&mut buf)
+                    .await
+                    .unwrap_or_else(|e| panic!("{e}")),
+                buf.len() / 2
+            );
+
+            assert_eq!(
+                stream
+                    .read(&mut buf)
+                    .await
+                    .unwrap_or_else(|e| panic!("{e}")),
+                0
+            );
+
+            drop(stream);
+            assert!(handle.await.is_ok());
+
+            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_shutdown_after_write() {
+        rt! {
+            let buf = [1u8; 10];
+            let (handle, mut stream) = setup_stream(vec![
+                OnConnect::ReadBytes(buf.len() / 2),
+                OnConnect::Delay(Duration::from_millis(100)),
+                OnConnect::ReadBytes(buf.len() / 2),
+            ])
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+
+            stream
+                .write(&buf[..buf.len() / 2])
+                .await
+                .unwrap_or_else(|e| panic!("{e}"));
+
+            assert!(stream.shutdown().await.is_ok());
+
+            clock::advance(Duration::from_millis(100)).await;
+
+            drop(stream);
+            assert_eq!(
+                handle
+                    .await
+                    .expect("task should complete")
+                    .expect_err("stream is shutdown")
+                    .kind(),
+                io::ErrorKind::UnexpectedEof
+            );
+
+            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
+        }
+    }
+
+    #[test]
+    fn test_write_all() {
+        rt! {
+            let buf = [1u8; 10];
+            let (handle, mut stream) = setup_stream(vec![
+                OnConnect::ReadBytes(buf.len() * 2),
+                OnConnect::Delay(Duration::from_millis(100)),
+            ])
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+
+            stream
+                .write_all(&buf)
+                .await
+                .unwrap_or_else(|e| panic!("{e}"));
+
+            clock::advance(Duration::from_millis(100)).await;
+
+            drop(stream);
+            assert!(handle.await.is_ok());
+
+            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
         }
     }
 }

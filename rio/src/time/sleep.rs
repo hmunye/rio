@@ -75,7 +75,7 @@ pub const fn sleep_until(deadline: Instant) -> Sleep {
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct Sleep {
     deadline: Instant,
-    handle: Option<TimerHandle>,
+    entry: Option<TimerHandle>,
 }
 
 impl Sleep {
@@ -96,15 +96,15 @@ impl Sleep {
     const fn new_timeout(deadline: Instant) -> Self {
         Sleep {
             deadline,
-            handle: None,
+            entry: None,
         }
     }
 
     pub(crate) fn reset(&mut self, deadline: Instant) {
         self.deadline = deadline;
 
-        if let Some(timer_handle) = &self.handle {
-            timer_handle.reset(deadline);
+        if let Some(timer_entry) = &self.entry {
+            timer_entry.reset(deadline);
         }
     }
 }
@@ -120,8 +120,8 @@ impl Future for Sleep {
             return Poll::Ready(());
         }
 
-        if self.handle.is_none() {
-            self.handle = Some(context::with_handle(|handle| {
+        if self.entry.is_none() {
+            self.entry = Some(context::with_handle(|handle| {
                 handle.register_timer(self.deadline, cx.waker().clone())
             }));
         }
@@ -134,12 +134,13 @@ impl Future for Sleep {
 mod tests {
     use super::*;
 
+    use crate::rt::Handle;
+
     #[cfg(not(miri))]
     const THRESHOLD_MS: u64 = 5;
 
     fn rt_timer_count() -> usize {
-        #[allow(clippy::redundant_closure_for_method_calls)]
-        context::with_handle(|handle| handle.timers())
+        context::with_handle(Handle::timers)
     }
 
     #[test]

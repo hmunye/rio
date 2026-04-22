@@ -5,11 +5,8 @@ use std::task::Context;
 
 use crate::rt::task::{LocalWaker, TaskStage};
 use crate::rt::{Task, context};
-use crate::task::JoinHandle;
-use crate::task::{
-    self,
-    coop::{self, Budget},
-};
+use crate::task::coop::{self, Budget};
+use crate::task::{self, JoinHandle};
 
 cfg_time! {
     use std::time::Duration;
@@ -26,11 +23,9 @@ cfg_io! {
 #[derive(Debug)]
 struct Deferred {
     /// Each slot corresponds to the amount of execution budget used by that
-    /// task during the previous "tick" (`0..=Budget::INITIAL`).
+    /// task during the previous scheduler "tick" (`0..=Budget::INITIAL`).
     buckets: [Vec<task::Id>; (Budget::INITIAL + 1) as usize],
     /// Tracks non-empty buckets for efficient lookup.
-    ///
-    /// NOTE: `Budget::INITIAL` must be <= 127.
     bitmap: u128,
 }
 
@@ -46,14 +41,13 @@ impl Deferred {
             return None;
         }
 
-        // Next non-empty bucket, from least to most execution budget used in
-        // the previous "tick".
+        // Next non-empty bucket, from least to most execution budget used
+        // during the previous scheduler "tick".
         let next_bucket = self.bitmap.trailing_zeros() as usize;
         let bucket = &mut self.buckets[next_bucket];
 
         // Mark bucket as empty since it will be fully drained.
         self.bitmap &= !(1 << next_bucket);
-
         Some(bucket.drain(..))
     }
 
@@ -72,12 +66,12 @@ pub struct Scheduler {
     ///
     /// [`Id`]: task::Id
     tasks: RefCell<HashMap<task::Id, (Task, LocalWaker)>>,
-    /// Queue of task [`Id`]s ready to be polled, potentially on the _current_
-    /// "tick".
+    /// Queue of task [`Id`]s ready to be polled, possibly on the _current_
+    /// scheduler "tick".
     ///
     /// [`Id`]: task::Id
     ready: RefCell<VecDeque<task::Id>>,
-    /// Task [`Id`]s to be polled on the _next_ "tick".
+    /// Task [`Id`]s to be polled on the _next_ scheduler "tick".
     ///
     /// [`Id`]: task::Id
     deferred: RefCell<Deferred>,
@@ -87,6 +81,10 @@ pub struct Scheduler {
 impl Scheduler {
     #[must_use]
     pub fn new() -> Self {
+        // NOTE: `Budget::INITIAL` must be <= 127 for `Deferred` to work
+        // correctly.
+        const { debug_assert!(Budget::INITIAL <= 127) }
+
         Scheduler {
             tasks: RefCell::default(),
             ready: RefCell::default(),
@@ -100,7 +98,9 @@ impl Scheduler {
 
     /// Spawns an asynchronous task, blocking the current thread until the
     /// provided future completes and the scheduler is fully idle (i.e., no
-    /// registered tasks remaining).
+    /// registered tasks), or [`shutdown`] is called.
+    ///
+    /// [`shutdown`]: crate::rt::shutdown
     pub fn spawn_blocking<F: Future + 'static>(
         &self,
         fut: F,
@@ -108,14 +108,13 @@ impl Scheduler {
     ) -> F::Output {
         let task = Task::new_with(fut, |out, weak| {
             if let Some(state) = weak.upgrade() {
-                // We know the handle is not dropped; retain the output.
+                // We know the handle is not dropped and any _panic_ is not
+                // caught; retain the output.
                 state.set_stage(TaskStage::Finished(Box::new(out)));
             }
         });
 
         let join = JoinHandle {
-            // NOTE: Uses an `Rc` (not `Weak`) so the task’s output remains
-            // accessible even when the task is dropped.
             state: Rc::clone(&task.state),
             _marker: std::marker::PhantomData,
         };
@@ -127,29 +126,30 @@ impl Scheduler {
         }
 
         join.take_output()
-            .expect("`block_on` task missing output: all tasks should have completed")
+            .expect("`block_on` task missing output: should have completed")
     }
 
-    /// Registers the provided asynchronous task for polling, potentially on the
-    /// current "tick".
+    /// Registers the provided asynchronous task for polling, possibly on the
+    /// current scheduler "tick".
     pub fn spawn(&self, task: Task, handle: Weak<Scheduler>) {
         self.register_task(task, handle);
     }
 
     /// Schedules the task with the specified `Id` as ready for polling,
-    /// potentially on the _current_ "tick".
+    /// possibly on the _current_ "tick".
     pub fn schedule_task(&self, id: task::Id) {
         self.ready.borrow_mut().push_back(id);
     }
 
     /// Schedules the task with the specified `Id` to be polled on the _next_
-    /// "tick", weighted by how much of the execution budget it used during the
-    /// current "tick".
+    /// "tick", weighted by how much of the execution budget it consumed during
+    /// the current scheduler "tick".
     pub fn defer_task(&self, id: task::Id, used_budget: u8) {
         self.deferred.borrow_mut().insert(used_budget as usize, id);
     }
 
-    /// Signals the scheduler to begin shutting down.
+    /// Signals the scheduler to begin shutting down, returning from
+    /// `spawn_blocking` when the _root_ task completes.
     pub fn shutdown_background(&self) {
         self.shutdown.set(true);
     }
@@ -176,7 +176,6 @@ impl Scheduler {
 
     fn run_task(&self, id: task::Id, mut task: Task, waker: LocalWaker) {
         let mut cx = Context::from_waker(&waker);
-
         context::update_snapshot();
 
         if task.is_pollable() && task.poll(&mut cx).is_pending() {
@@ -204,8 +203,8 @@ impl Scheduler {
             context::with_handle(|handle| handle.drive_io(timeout));
         }
 
-        // Queue deferred tasks in ascending order of execution budget used
-        // during the previous "tick".
+        // Queue deferred tasks in ascending order of execution budget consumed
+        // during the previous scheduler "tick".
         while let Some(ids) = self.deferred.borrow_mut().next_bucket() {
             self.ready.borrow_mut().extend(ids);
         }

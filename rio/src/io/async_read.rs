@@ -3,6 +3,7 @@ use std::task::{Context, Poll};
 use std::{io, ops};
 
 use crate::io::read::{Read, read};
+use crate::io::read_exact::{ReadExact, read_exact};
 
 /// Reads bytes asynchronously from a source, analogous to [`std::io::Read`].
 pub trait AsyncRead {
@@ -62,8 +63,8 @@ pub trait AsyncReadExt: AsyncRead {
     ///
     /// # Errors
     ///
-    /// Returns `Err(e)` if an I/O error is encountered. On error, no bytes are
-    /// read. Partial reads are **not** considered an error.
+    /// Returns `Err` if an I/O error is encountered. On error, no bytes are
+    /// read. Partial reads are __not__ considered an error.
     fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> Read<'a, Self>
     where
         Self: Unpin,
@@ -71,28 +72,19 @@ pub trait AsyncReadExt: AsyncRead {
         read(self, buf)
     }
 
-    /// TODO:
-    fn read_exact<'a>(&'a mut self, _buf: &'a mut [u8]) -> ()
+    /// Reads the exact number of bytes required to fill `buf`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if an I/O error or [`ErrorKind::UnexpectedEof`] is
+    /// encountered. On error, the contents of `buf` are unspecified.
+    ///
+    /// [`ErrorKind::UnexpectedEof`]: std::io::ErrorKind::UnexpectedEof
+    fn read_exact<'a>(&'a mut self, buf: &'a mut [u8]) -> ReadExact<'a, Self>
     where
         Self: Unpin,
     {
-        todo!()
-    }
-
-    /// TODO:
-    fn read_to_end<'a>(&'a mut self, _buf: &'a mut Vec<u8>) -> ()
-    where
-        Self: Unpin,
-    {
-        todo!()
-    }
-
-    /// TODO:
-    fn read_to_string<'a>(&'a mut self, _dst: &'a mut String) -> ()
-    where
-        Self: Unpin,
-    {
-        todo!()
+        read_exact(self, buf)
     }
 }
 

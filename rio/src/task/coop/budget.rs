@@ -11,12 +11,12 @@ pub fn has_budget_remaining() -> bool {
 /// Execution Budget.
 ///
 /// Tracks the number of polling iterations that may be performed within a
-/// scheduler "tick", before control is yielded back.
+/// scheduler "tick" cycle, before control is yielded back.
 #[derive(Debug, Clone, Copy)]
 pub struct Budget(Option<u8>);
 
 impl Budget {
-    /// One less than `tokio`'s initial value to use within a `u128` bitmap.
+    /// Can be used within a `u128` bitmask.
     ///
     /// <https://docs.rs/tokio/latest/src/tokio/task/coop/mod.rs.html#116>
     pub const INITIAL: u8 = 127;
@@ -38,12 +38,11 @@ impl Budget {
         self.0.is_none_or(|b| {
             let remaining = b > 0;
             self.0 = Some(b.saturating_sub(1));
-
             remaining
         })
     }
 
-    /// Consumes `self`, returning its numeric value.
+    /// Consumes `self`, returning its numeric budget value.
     #[must_use]
     pub const fn val(self) -> Option<u8> {
         self.0
@@ -70,6 +69,7 @@ pub fn with_unconstrained<R>(f: impl FnOnce() -> R) -> R {
     with_budget(Budget::unconstrained(), f)
 }
 
+// <https://docs.rs/tokio/latest/src/tokio/task/coop/mod.rs.html#144>
 fn with_budget<R>(budget: Budget, f: impl FnOnce() -> R) -> R {
     struct ResetGuard {
         prev: Budget,

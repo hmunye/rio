@@ -4,8 +4,7 @@ use std::time::{Duration, Instant};
 
 use crate::rt::time::{Clock, TimerHandle, TimerHeap};
 
-/// Driver for managing asynchronous delays and time-based events within the
-/// runtime.
+/// Driver for managing timer-based events within the runtime.
 #[derive(Debug)]
 pub struct Driver {
     timers: RefCell<TimerHeap>,
@@ -21,15 +20,15 @@ impl Driver {
         }
     }
 
-    /// Registers a timer with the driver, returning its [`TimerHandle`]
+    /// Registers a timer with the driver, returning a [`TimerHandle`]
     ///
-    /// The timer will track `deadline`, and `waker` will be notified when the
-    /// deadline has elapsed.
+    /// The timer will track `deadline`, and `waker` will be notified when it
+    /// has elapsed.
     pub fn register_timer(&self, deadline: Instant, waker: Waker) -> TimerHandle {
         self.timers.borrow_mut().push(deadline, waker)
     }
 
-    /// Attempts to update the `deadline` of the timer identified by `handle`,
+    /// Attempts to update the deadline of the timer identified by `handle`,
     /// returning `true` if successful.
     pub fn update_timer(&self, handle: &TimerHandle, deadline: Instant) -> bool {
         let mut timers = self.timers.borrow_mut();
@@ -42,26 +41,23 @@ impl Driver {
         }
     }
 
-    /// Cancels the timer identified by `handle`, removing it from the driver.
+    /// Cancels the timer identified by `handle`.
     pub fn cancel_timer(&self, handle: &TimerHandle) {
         self.timers.borrow_mut().remove(handle);
     }
 
-    /// Drives the timers registered with the driver, returning a timeout
-    /// duration corresponding to the earliest pending timer, if one exist.
+    /// Processes pending timers, returning the duration until the next
+    /// scheduled timer, if any.
     ///
-    /// Notifies all `Waker`s whose time-based events (e.g., timers) have
-    /// elapsed, ensuring the associated tasks are ready to be polled by the
-    /// scheduler.
+    /// Wakes all tasks whose timers have expired.
     pub fn drive(&self) -> Option<Duration> {
         self.drive_timers()
     }
 
-    /// Processes timers whose deadlines have elapsed, returning a timeout
-    /// duration corresponding to the earliest pending timer, if one exist.
+    /// Processes timers whose deadlines have elapsed, returning the duration
+    /// until the next scheduled timer, if any.
     ///
-    /// For each timer that has reached its deadline, its registered `Waker` is
-    /// notified. Timers with deadlines not yet elapsed remain registered.
+    /// Timers that have not yet reached their deadlines remain pending.
     fn drive_timers(&self) -> Option<Duration> {
         let mut timers = self.timers.borrow_mut();
 
@@ -98,7 +94,7 @@ impl Driver {
 
 cfg_test! {
     impl Driver {
-        /// Returns a reference to the time abstraction source used by the driver.
+        /// Returns a reference to the time source used by this driver.
         pub const fn clock(&self) -> &Clock {
             &self.clock
         }

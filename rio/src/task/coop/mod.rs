@@ -23,16 +23,16 @@
 //!     for _ in 0..1_000_000_000 {
 //!         // ...
 //!
-//!         // Even though we `await` here, because the future is always ready,
-//!         // the runtime immediately polls this task again.
+//!         // Even though we `.await` here, because the future is always returns
+//!         // Poll::Ready, the task is able to continue executing.
 //!         future::ready(()).await;
 //!     }
 //! }
 //! ```
 //!
-//! To ensure fair scheduling, make use of the cooperative utilities from this
-//! module. These utilities ensure that the task periodically yields control, in
-//! a way that allows other tasks to run:
+//! To ensure fair scheduling, make use of the cooperative utilities provided by
+//! this module. These utilities ensure that the task _may_ periodically yields
+//! control, in a way that allows other ready tasks to make progress:
 //!
 //! ```
 //! use std::future;
@@ -41,8 +41,9 @@
 //!     for _ in 0..1_000_000_000 {
 //!         // ...
 //!
-//!         // This ensures the future participates in the runtime’s cooperative
-//!         // scheduling, counting towards the task's execution budget.
+//!         // This ensures the wrapped future participates in the runtime’s
+//!         // cooperative scheduling, counting towards the current execution
+//!         // budget.
 //!         rio::task::coop::make_cooperative(future::ready(())).await;
 //!     }
 //! }

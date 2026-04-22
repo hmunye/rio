@@ -173,7 +173,6 @@ impl Interval {
             });
 
             self.delay.reset(next_tick);
-
             Poll::Ready(last_tick)
         })
         .await
@@ -207,15 +206,14 @@ mod tests {
 
     use super::*;
 
-    use crate::rt::context;
     use crate::rt::time::clock;
+    use crate::rt::{Handle, context};
 
     #[cfg(not(miri))]
     const THRESHOLD_MS: u64 = 5;
 
     fn rt_timer_count() -> usize {
-        #[allow(clippy::redundant_closure_for_method_calls)]
-        context::with_handle(|handle| handle.timers())
+        context::with_handle(Handle::timers)
     }
 
     #[test]

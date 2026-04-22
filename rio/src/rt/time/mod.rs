@@ -8,7 +8,7 @@ mod heap;
 pub use heap::TimerHeap;
 
 mod registration;
-pub use registration::{RawHandle, TimerHandle};
+pub use registration::{RawTimerHandle, TimerHandle};
 
 pub mod clock;
 pub use clock::Clock;

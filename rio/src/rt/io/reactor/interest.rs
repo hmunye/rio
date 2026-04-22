@@ -60,8 +60,8 @@ cfg_bsd! {
     /// Bitmask of I/O event readiness flags to be notified on (`kqueue(2)`).
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct Interest {
-        pub(crate) flags: libc::c_ushort,
-        pub(crate) filter: libc::c_short,
+        pub flags: libc::c_ushort,
+        pub filter: libc::c_short,
     }
 
     impl Interest {

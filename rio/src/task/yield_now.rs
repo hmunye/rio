@@ -4,7 +4,7 @@ use std::task::Poll;
 use crate::rt::context;
 use crate::task;
 
-/// Yields control back to the runtime, allowing other ready tasks to make
+/// Yields control back to the scheduler, allowing other ready tasks to make
 /// progress.
 ///
 /// # Panics
@@ -20,18 +20,19 @@ use crate::task;
 /// async fn foo() {
 ///     println!("task #{}", rio::task::id());
 ///
-///     // ...
+///     // work...
 ///
 ///     rio::task::yield_now().await;
 /// }
 ///
 /// rio::spawn(foo());
+/// rio::spawn(foo());
 /// # }
 /// ```
 #[inline]
 pub async fn yield_now() {
-    // Ensures we only yield up to the scheduler once, to avoid blocking other
-    // tasks.
+    // Ensures we only yield to the scheduler once, to avoid blocking the
+    // runtime.
     let mut yielded = false;
 
     future::poll_fn(|_| {
@@ -40,7 +41,6 @@ pub async fn yield_now() {
         }
 
         yielded = true;
-
         context::with_handle(|handle| handle.defer_task(task::id()));
 
         Poll::Pending

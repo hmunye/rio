@@ -1,7 +1,7 @@
 //! Minimal Asynchronous Runtime for Rust.
 //!
 //! `rio` is a lightweight, single-threaded asynchronous runtime designed for
-//! high-concurrency, memory-efficient applications.
+//! simplicity and efficiency.
 //!
 //! ### Cooperative vs. Preemptive
 //!
@@ -21,10 +21,9 @@
 //! Because `rio` is single-threaded and cooperative, __you must never perform
 //! blocking operations__ (like `std::thread::sleep` or synchronous I/O) within
 //! a task. Blocking a task stops the entire runtime. Instead, use the utilities
-//! provided for working with [asynchronous tasks][task], including [yielding],
-//! [timeouts, sleeps, intervals][time], and [non-blocking I/O][io].
-//!
-//! [yielding]: crate::task::yield_now
+//! provided for working with [asynchronous tasks][task], including
+//! [timeouts, sleeps, intervals][time], [non-blocking I/O][io],
+//! [asynchronous networking][net], and [cooperative scheduling][task::coop].
 
 #![deny(clippy::unwrap_used)]
 #![warn(clippy::pedantic)]

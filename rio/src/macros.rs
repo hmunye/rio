@@ -134,7 +134,7 @@ macro_rules! cfg_bsd {
 macro_rules! rt {
     ($($tt:tt)*) => {
         let rt = crate::rt::Runtime::new();
-        rt.block_on(async {
+        rt.block_on(async move {
             $(
                 $tt
             )*

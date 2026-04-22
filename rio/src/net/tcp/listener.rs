@@ -90,6 +90,7 @@ impl TcpListener {
     /// # }
     /// ```
     // <https://docs.rs/tokio/latest/src/tokio/net/tcp/listener.rs.html#103-121>
+    #[inline]
     pub async fn bind<A: ToSocketAddrs>(addr: A) -> io::Result<TcpListener> {
         let addrs = addr.to_socket_addrs()?;
         let mut last_err = None;
