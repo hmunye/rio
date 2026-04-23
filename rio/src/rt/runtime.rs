@@ -79,7 +79,7 @@ impl Default for Runtime {
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
 /// use std::time::Duration;

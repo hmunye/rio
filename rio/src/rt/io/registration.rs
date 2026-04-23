@@ -113,9 +113,17 @@ impl IoHandle {
             if interest.is_writable() {
                 self.set_write_event();
             }
+
+            // Store most recent filter applied.
+            self.interest.filter = interest.filter;
+            self.interest.flags |= interest.flags;
         }
 
-        self.interest |= interest;
+        #[cfg(target_os = "linux")]
+        {
+            self.interest |= interest;
+        }
+
         context::with_handle(|handle| handle.update_interest_io(self));
     }
 

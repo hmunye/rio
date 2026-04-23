@@ -230,6 +230,31 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
+    fn test_sleep_multiple_ordered_2() {
+        rt! {
+            clock::resume();
+
+            crate::spawn(async {
+                sleep(std::time::Duration::from_millis(200)).await;
+            });
+
+            crate::spawn(async {
+                sleep(std::time::Duration::from_millis(100)).await;
+            });
+
+            crate::spawn(async {
+                sleep(std::time::Duration::from_millis(300)).await;
+            });
+
+            sleep(std::time::Duration::from_millis(100)).await;
+            sleep(std::time::Duration::from_millis(500)).await;
+
+            assert_eq!(rt_timer_count(), 0);
+        }
+    }
+
+    #[test]
     fn test_sleep_multiple_same_deadline() {
         rt! {
             let handle1 = crate::spawn(async {
