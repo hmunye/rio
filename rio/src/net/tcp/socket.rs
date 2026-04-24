@@ -51,7 +51,7 @@ impl TcpSocket {
                     sin_family: libc::AF_INET as u16,
                     sin_port: v4.port().to_be(), // network-byte order
                     sin_addr: libc::in_addr {
-                        // NOTE: Need to use `from_ne_bytes`.
+                        // Need to use `from_ne_bytes`.
                         s_addr: u32::from_ne_bytes(v4.ip().octets()),
                     },
                     sin_zero: [0; 8],
@@ -69,7 +69,7 @@ impl TcpSocket {
                     sin_family: libc::AF_INET as u8,
                     sin_port: v4.port().to_be(), // network-byte order
                     sin_addr: libc::in_addr {
-                        // NOTE: Need to use `from_ne_bytes`.
+                        // Need to use `from_ne_bytes`.
                         s_addr: u32::from_ne_bytes(v4.ip().octets()),
                     },
                     sin_zero: [0; 8],

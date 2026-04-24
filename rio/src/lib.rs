@@ -41,8 +41,6 @@
 #![allow(clippy::borrow_as_ptr)]
 #![allow(clippy::single_match_else)]
 
-// TODO: Add UDP support
-
 // Must be defined first!
 #[macro_use]
 pub(crate) mod macros;

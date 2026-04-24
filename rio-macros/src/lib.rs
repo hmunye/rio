@@ -75,7 +75,7 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// * `#[core::prelude::*::test]` or `#[::core::prelude::*::test]`
 /// * `#[std::prelude::*::test]` or `#[::std::prelude::*::test]`
 ///
-/// <https://docs.rs/tokio-macros/2.6.1/src/tokio_macros/entry.rs.html#610>
+// <https://docs.rs/tokio-macros/2.6.1/src/tokio_macros/entry.rs.html#610>
 fn is_test_attribute(attr: &Attribute) -> bool {
     let path = match &attr.meta {
         syn::Meta::Path(path) => path,

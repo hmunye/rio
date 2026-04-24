@@ -38,6 +38,8 @@ pub fn sleep(duration: Duration) -> Sleep {
         None => {
             // <https://docs.rs/tokio/latest/src/tokio/time/instant.rs.html#34-36>
             //
+            // commit: 6c03e03898d71eca976ee1ad8481cf112ae722ba
+            //
             // clock::now() + Duration::from_secs(86400 * 365 * 30)
             clock::now() + Duration::from_hours(262_800)
         }

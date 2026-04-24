@@ -23,6 +23,8 @@ where
 pub struct Shutdown<'a, S: ?Sized> {
     s: &'a mut S,
     // <https://docs.rs/tokio/latest/src/tokio/io/util/shutdown.rs.html#19>
+    //
+    // commit: 6c03e03898d71eca976ee1ad8481cf112ae722ba
     _pin: PhantomPinned,
 }
 

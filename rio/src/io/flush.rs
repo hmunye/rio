@@ -23,6 +23,8 @@ where
 pub struct Flush<'a, F: ?Sized> {
     f: &'a mut F,
     // <https://docs.rs/tokio/latest/src/tokio/io/util/flush.rs.html#20>
+    //
+    // commit: 6c03e03898d71eca976ee1ad8481cf112ae722ba
     _pin: PhantomPinned,
 }
 

@@ -127,6 +127,8 @@ impl<F> Timeout<F> {
 }
 
 // <https://docs.rs/tokio/latest/src/tokio/time/timeout.rs.html#212>
+//
+// commit: 6c03e03898d71eca976ee1ad8481cf112ae722ba
 impl<F: Future> Future for Timeout<F> {
     type Output = Result<F::Output, Elapsed>;
 
@@ -143,6 +145,8 @@ impl<F: Future> Future for Timeout<F> {
 }
 
 // <https://docs.rs/tokio/latest/src/tokio/time/timeout.rs.html#212>
+//
+// commit: 6c03e03898d71eca976ee1ad8481cf112ae722ba
 fn poll_delay(budget_before: bool, delay: Pin<&mut Sleep>, cx: &mut Context<'_>) -> Poll<Elapsed> {
     let delay_poll = || match delay.poll(cx) {
         Poll::Ready(()) => Poll::Ready(Elapsed(())),

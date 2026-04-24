@@ -27,6 +27,8 @@ pub struct ReadExact<'a, R: ?Sized> {
     buf: &'a mut [u8],
     cap: usize,
     // <https://docs.rs/tokio/latest/src/tokio/io/util/read_exact.rs.html#37>
+    //
+    // commit: 6c03e03898d71eca976ee1ad8481cf112ae722ba
     _pin: PhantomPinned,
 }
 
@@ -54,6 +56,8 @@ impl<'a, R: ?Sized> ReadExact<'a, R> {
 }
 
 // <https://docs.rs/tokio/latest/src/tokio/io/util/read_exact.rs.html#47>
+//
+// commit: 6c03e03898d71eca976ee1ad8481cf112ae722ba
 impl<R> Future for ReadExact<'_, R>
 where
     R: AsyncRead + Unpin + ?Sized,

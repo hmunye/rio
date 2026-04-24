@@ -17,8 +17,6 @@ pub struct Budget(Option<u8>);
 
 impl Budget {
     /// Can be used within a `u128` bitmask.
-    ///
-    /// <https://docs.rs/tokio/latest/src/tokio/task/coop/mod.rs.html#116>
     pub const INITIAL: u8 = 127;
 
     #[must_use]
@@ -70,6 +68,8 @@ pub fn with_unconstrained<R>(f: impl FnOnce() -> R) -> R {
 }
 
 // <https://docs.rs/tokio/latest/src/tokio/task/coop/mod.rs.html#144>
+//
+// commit: 6c03e03898d71eca976ee1ad8481cf112ae722ba
 fn with_budget<R>(budget: Budget, f: impl FnOnce() -> R) -> R {
     struct ResetGuard {
         prev: Budget,

@@ -449,6 +449,8 @@ impl AsyncWrite for TcpStream {
         match self.inner.shutdown(std::net::Shutdown::Write) {
             Ok(()) => Poll::Ready(Ok(())),
             // <https://docs.rs/tokio/latest/src/tokio/net/tcp/stream.rs.html#1130>
+            //
+            // commit: 6c03e03898d71eca976ee1ad8481cf112ae722ba
             Err(e) if e.kind() == io::ErrorKind::NotConnected => Poll::Ready(Ok(())),
             Err(e) => Poll::Ready(Err(e)),
         }

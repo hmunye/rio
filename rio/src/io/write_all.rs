@@ -25,6 +25,8 @@ pub struct WriteAll<'a, W: ?Sized> {
     writer: &'a mut W,
     buf: &'a [u8],
     // <https://docs.rs/tokio/latest/src/tokio/io/util/write_all.rs.html#17>
+    //
+    // commit: 6c03e03898d71eca976ee1ad8481cf112ae722ba
     _pin: PhantomPinned,
 }
 
@@ -50,6 +52,8 @@ impl<'a, W: ?Sized> WriteAll<'a, W> {
 }
 
 // <https://docs.rs/tokio/latest/src/tokio/io/util/write_all.rs.html#34>
+//
+// commit: 6c03e03898d71eca976ee1ad8481cf112ae722ba
 impl<W> Future for WriteAll<'_, W>
 where
     W: AsyncWrite + Unpin + ?Sized,

@@ -25,6 +25,8 @@ pub struct Read<'a, R: ?Sized> {
     reader: &'a mut R,
     buf: &'a mut [u8],
     // <https://docs.rs/tokio/latest/src/tokio/io/util/read.rs.html#37>
+    //
+    // commit: 6c03e03898d71eca976ee1ad8481cf112ae722ba
     _pin: PhantomPinned,
 }
 
