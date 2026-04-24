@@ -10,7 +10,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nth(1)
         .unwrap_or_else(|| DEFAULT_ADDR.to_string());
 
-    let listener = TcpListener::bind(&addr).await?;
+    let listener = TcpListener::bind(&addr)?;
     eprintln!("[{addr}]: listening for connections...");
 
     loop {

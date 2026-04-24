@@ -37,7 +37,9 @@ pub fn sleep(duration: Duration) -> Sleep {
         Some(deadline) => deadline,
         None => {
             // <https://docs.rs/tokio/latest/src/tokio/time/instant.rs.html#34-36>
-            now + Duration::from_secs(86400 * 365 * 30)
+            //
+            // clock::now() + Duration::from_secs(86400 * 365 * 30)
+            clock::now() + Duration::from_hours(262_800)
         }
     };
 
@@ -170,7 +172,7 @@ mod tests {
     fn test_sleep_cancellation() {
         rt! {
             let handle = crate::spawn(async {
-                let mut s = sleep(Duration::from_millis(10000));
+                let mut s = sleep(Duration::from_secs(10));
                 let mut cx = Context::from_waker(std::task::Waker::noop());
 
                 assert!(Pin::new(&mut s).poll(&mut cx).is_pending());
@@ -230,7 +232,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "resumes clock"]
     fn test_sleep_multiple_ordered_2() {
         rt! {
             clock::resume();

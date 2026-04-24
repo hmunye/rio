@@ -71,10 +71,15 @@ cfg_bsd! {
         pub const WRITE: Interest = Interest { flags: 0, filter: libc::EVFILT_WRITE };
         /// Permit `kevent()`, `kevent64()`, and `kevent_qos()` to return the
         /// event if it is triggered.
+        #[allow(unused)]
         pub const ENABLE: Interest = Interest { flags: libc::EV_ENABLE, filter: 0 };
         /// Disable the event so `kevent()`, `kevent64()`, and `kevent_qos()`
         /// will not return it. The filter itself is not disabled.
+        #[allow(unused)]
         pub const DISABLE: Interest = Interest { flags: libc::EV_DISABLE, filter: 0 };
+        /// After the event is retrieved, its state is reset. Useful for filters
+        /// which report state transitions instead of the current state.
+        pub const EDGE_TRIGGERED: Interest = Interest { flags: libc::EV_CLEAR, filter: 0 };
 
         pub const fn is_readable(self) -> bool {
             self.filter == libc::EVFILT_READ
@@ -92,6 +97,11 @@ cfg_bsd! {
         #[allow(unused)]
         pub const fn is_disabled(self) -> bool {
             (self.flags & libc::EV_DISABLE) != 0
+        }
+
+        #[allow(unused)]
+        pub const fn is_edge_triggered(self) -> bool {
+            (self.flags & libc::EV_CLEAR) != 0
         }
 
         fn merge_filter(a: libc::c_short, b: libc::c_short) -> libc::c_short {

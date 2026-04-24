@@ -32,11 +32,21 @@ cfg_test! {
         // `clock::now`.
         task::yield_now().await;
 
-        context::with_handle(|handle| handle.clock().advance(duration));
+        advance_now(duration);
 
         // Post-yield to ensure the time driver can observe the advanced clock
         // in `clock::now`.
         task::yield_now().await;
+    }
+
+    /// Advances logical time by `duration` without yielding.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is not paused, if the current thread is not within
+    /// a runtime context, or `duration` is too large (e.g, `Duration::MAX`).
+    pub fn advance_now(duration: Duration) {
+        context::with_handle(|handle| handle.clock().advance(duration));
     }
 
     /// Resumes logical time.

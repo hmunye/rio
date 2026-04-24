@@ -169,7 +169,9 @@ impl Interval {
             // be in the past, so `next_tick` will complete immediately.
             let next_tick = last_tick.checked_add(self.period()).unwrap_or_else(|| {
                 // <https://docs.rs/tokio/latest/src/tokio/time/instant.rs.html#34-36>
-                clock::now() + Duration::from_secs(86400 * 365 * 30)
+                //
+                // clock::now() + Duration::from_secs(86400 * 365 * 30)
+                clock::now() + Duration::from_hours(262_800)
             });
 
             self.delay.reset(next_tick);

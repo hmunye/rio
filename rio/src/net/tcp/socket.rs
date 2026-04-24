@@ -218,27 +218,12 @@ impl Future for Connect {
                         match io::Error::last_os_error().raw_os_error() {
                             Some(libc::EAGAIN | libc::EALREADY | libc::EINPROGRESS) => {
                                 if self.handle.is_none() {
-                                    #[cfg(target_os = "linux")]
-                                    // `ONESHOT` disables further notifications
-                                    // for the file descriptor after an event is
-                                    // triggered; must be rearmed.
-                                    let interest = Interest::ONESHOT | Interest::WRITE;
-
-                                    #[cfg(any(
-                                        target_os = "macos",
-                                        target_os = "freebsd",
-                                        target_os = "dragonfly",
-                                        target_os = "openbsd",
-                                        target_os = "netbsd"
-                                    ))]
-                                    let interest = Interest::WRITE;
-
                                     // Socket becomes writable once a connection
                                     // is established.
                                     self.handle = Some(context::with_handle(|handle| {
                                         handle.register_io(
                                             self.sock.fd,
-                                            interest,
+                                            Interest::EDGE_TRIGGERED | Interest::WRITE,
                                             cx.waker().clone(),
                                         )
                                     }));
@@ -282,27 +267,9 @@ impl Future for Connect {
                     // and `stream` will be responsible for closing it.
                     let stream = unsafe { std::net::TcpStream::from_raw_fd(self.sock.fd) };
 
-                    #[cfg(target_os = "linux")]
                     // If `connect(2)` doesn't block, we return `None`, and
-                    // `stream` lazily registers one on the first read/write.
+                    // `stream` registers its own handle.
                     let handle = self.handle.take();
-
-                    #[cfg(any(
-                        target_os = "macos",
-                        target_os = "freebsd",
-                        target_os = "dragonfly",
-                        target_os = "openbsd",
-                        target_os = "netbsd"
-                    ))]
-                    let handle = self.handle.take().map(|mut handle| {
-                        // Disable the event to ensure it does not return on
-                        // additional `WRTIE` readiness. Clear the marked events
-                        // so on first `poll_write`, we add `Interest::ENABLE`.
-                        handle.add_interest(Interest::DISABLE);
-                        handle.clear_events();
-
-                        handle
-                    });
 
                     // Invalidate the file descriptor stored in `sock` to avoid
                     // premature close.

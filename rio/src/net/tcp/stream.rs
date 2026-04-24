@@ -336,8 +336,8 @@ impl AsyncRead for TcpStream {
     ) -> Poll<io::Result<usize>> {
         use std::io::Read;
 
-        let coop = ready!(coop::poll_proceed());
         let mut read = 0;
+        let coop = ready!(coop::poll_proceed());
 
         loop {
             match self.inner.read(&mut buf[read..]) {
@@ -357,36 +357,16 @@ impl AsyncRead for TcpStream {
                     match self.handle.as_mut() {
                         Some(handle) => {
                             if !handle.is_readable() {
-                                #[cfg(target_os = "linux")]
-                                let interest = Interest::EDGE_TRIGGERED | Interest::READ;
-
-                                #[cfg(any(
-                                    target_os = "macos",
-                                    target_os = "freebsd",
-                                    target_os = "dragonfly",
-                                    target_os = "openbsd",
-                                    target_os = "netbsd"
-                                ))]
-                                let interest = Interest::READ;
-
-                                handle.add_interest(interest);
+                                handle.add_interest(Interest::EDGE_TRIGGERED | Interest::READ);
                             }
                         }
                         None => {
-                            #[cfg(target_os = "linux")]
-                            let interest = Interest::EDGE_TRIGGERED | Interest::READ;
-
-                            #[cfg(any(
-                                target_os = "macos",
-                                target_os = "freebsd",
-                                target_os = "dragonfly",
-                                target_os = "openbsd",
-                                target_os = "netbsd"
-                            ))]
-                            let interest = Interest::READ;
-
                             self.handle = Some(context::with_handle(|h| {
-                                h.register_io(self.inner.as_raw_fd(), interest, cx.waker().clone())
+                                h.register_io(
+                                    self.inner.as_raw_fd(),
+                                    Interest::EDGE_TRIGGERED | Interest::READ,
+                                    cx.waker().clone(),
+                                )
                             }));
                         }
                     }
@@ -415,8 +395,8 @@ impl AsyncWrite for TcpStream {
     ) -> Poll<io::Result<usize>> {
         use std::io::Write;
 
-        let coop = ready!(coop::poll_proceed());
         let mut written = 0;
+        let coop = ready!(coop::poll_proceed());
 
         loop {
             match self.inner.write(&buf[written..]) {
@@ -433,44 +413,17 @@ impl AsyncWrite for TcpStream {
                     }
                 }
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    match self.handle.as_mut() {
-                        Some(handle) => {
-                            if !handle.is_writable() {
-                                #[cfg(target_os = "linux")]
-                                let interest = Interest::EDGE_TRIGGERED | Interest::WRITE;
-
-                                #[cfg(any(
-                                    target_os = "macos",
-                                    target_os = "freebsd",
-                                    target_os = "dragonfly",
-                                    target_os = "openbsd",
-                                    target_os = "netbsd"
-                                ))]
-                                // Ensure we enable the registered `WRITE`
-                                // event, if the `IoHandle` stored was derived
-                                // from `TcpSocket::connect`.
-                                let interest = Interest::ENABLE | Interest::WRITE;
-
-                                handle.add_interest(interest);
-                            }
-                        }
-                        None => {
-                            #[cfg(target_os = "linux")]
-                            let interest = Interest::EDGE_TRIGGERED | Interest::WRITE;
-
-                            #[cfg(any(
-                                target_os = "macos",
-                                target_os = "freebsd",
-                                target_os = "dragonfly",
-                                target_os = "openbsd",
-                                target_os = "netbsd"
-                            ))]
-                            let interest = Interest::WRITE;
-
-                            self.handle = Some(context::with_handle(|h| {
-                                h.register_io(self.inner.as_raw_fd(), interest, cx.waker().clone())
-                            }));
-                        }
+                    // NOTE: `IoHandle` is derived from `TcpSocket::connect`,
+                    // which already registers interest in EDGE_TRIGGERED and
+                    // WRITE, if one was initialized.
+                    if self.handle.is_none() {
+                        self.handle = Some(context::with_handle(|h| {
+                            h.register_io(
+                                self.inner.as_raw_fd(),
+                                Interest::EDGE_TRIGGERED | Interest::WRITE,
+                                cx.waker().clone(),
+                            )
+                        }));
                     }
 
                     if written > 0 {
@@ -508,8 +461,7 @@ mod tests {
 
     use crate::io::{AsyncReadExt, AsyncWriteExt};
     use crate::net::TcpListener;
-    use crate::rt::Handle;
-    use crate::rt::time::clock;
+    use crate::rt::{Handle, time::clock};
     use crate::task::JoinHandle;
 
     const THRESHOLD_MS: u64 = 5;
@@ -517,14 +469,32 @@ mod tests {
     enum OnConnect {
         WriteBytes(usize),
         ReadBytes(usize),
-        Delay(Duration),
         Shutdown,
+
+        // FIXME: Hack for test synchronization.
+        Wait(Duration),
+        // FIXME: Hack for test synchronization.
+        Notify,
     }
 
-    async fn spawn_listener(
+    /// FIXME: Hack for test synchronization.
+    ///
+    /// Used with `OnConnect::Notify` to let the listener task make progress
+    /// until it yields or completes. Ordering of the `OnConnect` commands in
+    /// relation with when this macro is invoked is important.
+    ///
+    /// Essentially the inverse of using `OnConnect::Delay`, where the listener
+    /// task waits for the unit test to advance the logical clock.
+    macro_rules! await_notify {
+        () => {
+            crate::time::sleep(::std::time::Duration::from_millis(1)).await;
+        };
+    }
+
+    fn spawn_listener(
         actions: Vec<OnConnect>,
     ) -> io::Result<(JoinHandle<io::Result<()>>, SocketAddr)> {
-        let ln = TcpListener::bind("127.0.0.1:0").await?;
+        let ln = TcpListener::bind("127.0.0.1:0")?;
         let addr = ln.local_addr()?;
 
         let handle = crate::spawn(async move {
@@ -534,16 +504,19 @@ mod tests {
             for action in actions {
                 match action {
                     OnConnect::WriteBytes(n) => {
-                        socket.write("1".repeat(n).as_bytes()).await?;
+                        socket.write_all("1".repeat(n).as_bytes()).await?;
                     }
                     OnConnect::ReadBytes(n) => {
                         socket.read_exact(&mut buf[..n]).await?;
                     }
-                    OnConnect::Delay(d) => {
+                    OnConnect::Wait(d) => {
                         crate::time::sleep(d).await;
                     }
                     OnConnect::Shutdown => {
                         socket.shutdown().await?;
+                    }
+                    OnConnect::Notify => {
+                        clock::advance_now(Duration::from_millis(1));
                     }
                 }
             }
@@ -554,12 +527,44 @@ mod tests {
         Ok((handle, addr))
     }
 
+    /// Initialize a `TcpStream` connected to a listener task.
+    ///
+    /// The listener task is spawned with the provided `OnConnect` commands,
+    /// which it will process first before returning a handle to the task and
+    /// the `TcpStream`.
+    #[allow(unused_mut)]
     #[allow(clippy::future_not_send)]
     async fn setup_stream(
-        commands: Vec<OnConnect>,
+        mut commands: Vec<OnConnect>,
     ) -> io::Result<(JoinHandle<io::Result<()>>, TcpStream)> {
-        let (handle, addr) = spawn_listener(commands).await?;
+        #[cfg(any(
+            target_os = "macos",
+            target_os = "freebsd",
+            target_os = "dragonfly",
+            target_os = "openbsd",
+            target_os = "netbsd"
+        ))]
+        commands.insert(0, OnConnect::Notify);
+
+        let (handle, addr) = spawn_listener(commands)?;
         let stream = TcpStream::connect(addr).await?;
+
+        #[cfg(any(
+            target_os = "macos",
+            target_os = "freebsd",
+            target_os = "dragonfly",
+            target_os = "openbsd",
+            target_os = "netbsd"
+        ))]
+        // NOTE: `kqueue(2)` notifies readiness differently than `epoll(7)`.
+        //
+        // With `kqueue(2)`, the first `accept(2)` may block, causing the
+        // listener task to yield. `await_notify!()` ensures the listener task
+        // can accept the connection before `setup_stream` returns.
+        //
+        // With `epoll(7)`, the first `accept(2)` does not block, so this step
+        // is unnecessary.
+        await_notify!();
 
         assert!(context::with_handle(Handle::io_resources) > 0);
 
@@ -570,11 +575,9 @@ mod tests {
     fn test_pending_read() {
         rt! {
             let mut buf = [0u8; 10];
-            let (handle, mut stream) = setup_stream(vec![
-                OnConnect::Delay(Duration::from_millis(100)),
-            ])
-            .await
-            .unwrap_or_else(|e| panic!("{e}"));
+            let (handle, mut stream) = setup_stream(vec![OnConnect::Wait(Duration::from_millis(100))])
+                .await
+                .unwrap_or_else(|e| panic!("{e}"));
 
             let mut read = stream.read(&mut buf);
 
@@ -600,13 +603,16 @@ mod tests {
             let mut buf = [0u8; 10];
             let (handle, mut stream) = setup_stream(vec![
                 OnConnect::WriteBytes(buf.len() * 2),
-                OnConnect::Delay(Duration::from_millis(100)),
+                OnConnect::Wait(Duration::from_millis(100)),
             ])
             .await
             .unwrap_or_else(|e| panic!("{e}"));
 
             assert_eq!(
-                stream.read(&mut buf).await.unwrap_or_else(|e| panic!("{e}")),
+                stream
+                    .read(&mut buf)
+                    .await
+                    .unwrap_or_else(|e| panic!("{e}")),
                 buf.len()
             );
 
@@ -661,7 +667,7 @@ mod tests {
             let mut buf = [0u8; 10];
             let (handle, mut stream) = setup_stream(vec![
                 OnConnect::WriteBytes(buf.len() / 2),
-                OnConnect::Delay(Duration::from_millis(100)),
+                OnConnect::Wait(Duration::from_millis(100)),
             ])
             .await
             .unwrap_or_else(|e| panic!("{e}"));
@@ -689,9 +695,9 @@ mod tests {
             let mut buf = [0u8; 10];
             let (handle, mut stream) = setup_stream(vec![
                 OnConnect::WriteBytes(buf.len() / 2),
-                OnConnect::Delay(Duration::from_millis(100)),
+                OnConnect::Wait(Duration::from_millis(100)),
                 OnConnect::WriteBytes(buf.len() / 2),
-                OnConnect::Delay(Duration::from_millis(100)),
+                OnConnect::Wait(Duration::from_millis(100)),
             ])
             .await
             .unwrap_or_else(|e| panic!("{e}"));
@@ -707,9 +713,7 @@ mod tests {
             clock::advance(Duration::from_millis(100)).await;
 
             assert_eq!(
-                read_exact
-                    .await
-                    .unwrap_or_else(|e| panic!("{e}")),
+                read_exact.await.unwrap_or_else(|e| panic!("{e}")),
                 buf.len()
             );
 
@@ -792,7 +796,8 @@ mod tests {
             let buf = [1u8; 10];
             let (handle, mut stream) = setup_stream(vec![
                 OnConnect::ReadBytes(buf.len() / 2),
-                OnConnect::Delay(Duration::from_millis(100)),
+                OnConnect::Notify,
+                OnConnect::Wait(Duration::from_millis(100)),
                 OnConnect::ReadBytes(buf.len() / 2),
             ])
             .await
@@ -805,6 +810,7 @@ mod tests {
 
             assert!(stream.shutdown().await.is_ok());
 
+            await_notify!();
             clock::advance(Duration::from_millis(100)).await;
 
             drop(stream);
@@ -828,7 +834,7 @@ mod tests {
             let buf = [1u8; 10];
             let (handle, mut stream) = setup_stream(vec![
                 OnConnect::ReadBytes(buf.len() * 2),
-                OnConnect::Delay(Duration::from_millis(100)),
+                OnConnect::Wait(Duration::from_millis(100)),
             ])
             .await
             .unwrap_or_else(|e| panic!("{e}"));

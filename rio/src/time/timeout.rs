@@ -198,7 +198,7 @@ mod tests {
     fn test_timeout_cancellation() {
         rt! {
             let handle = crate::spawn(async {
-                let mut t = std::pin::pin!(timeout(Duration::from_millis(100_000), async {
+                let mut t = std::pin::pin!(timeout(Duration::from_secs(100), async {
                     std::future::pending::<()>().await;
                 }));
 
@@ -288,7 +288,7 @@ mod tests {
 
             assert!(handle2.await.expect("task should have completed").is_err());
 
-            clock::advance(Duration::from_millis(1000)).await;
+            clock::advance(Duration::from_secs(1)).await;
 
             assert!(handle1.await.expect("task should have completed").is_ok());
             assert_eq!(rt_timer_count(), 0);

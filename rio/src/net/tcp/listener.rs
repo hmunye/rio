@@ -1,8 +1,9 @@
+use std::cell::OnceCell;
+use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::os::fd::AsRawFd;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
-use std::{future, io};
 
 use crate::net::TcpStream;
 use crate::rt::context;
@@ -19,7 +20,7 @@ use crate::task::coop;
 pub struct TcpListener {
     // NOTE: Defined first to ensure it is dropped before `ln` (deregister
     // before closing FD).
-    _handle: IoHandle,
+    handle: OnceCell<IoHandle>,
     ln: std::net::TcpListener,
 }
 
@@ -52,7 +53,7 @@ impl TcpListener {
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use rio::net::TcpListener;
     ///
-    /// let listener = TcpListener::bind("127.0.0.1:80").await?;
+    /// let listener = TcpListener::bind("127.0.0.1:80")?;
     ///
     /// # Ok(())
     /// # }
@@ -70,7 +71,7 @@ impl TcpListener {
     ///     SocketAddr::from(([127, 0, 0, 1], 80)),
     ///     SocketAddr::from(([127, 0, 0, 1], 443)),
     /// ];
-    /// let listener = TcpListener::bind(&addrs[..]).await?;
+    /// let listener = TcpListener::bind(&addrs[..])?;
     ///
     /// # Ok(())
     /// # }
@@ -84,19 +85,19 @@ impl TcpListener {
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use rio::net::TcpListener;
     ///
-    /// let listener = TcpListener::bind("127.0.0.1:0").await?;
+    /// let listener = TcpListener::bind("127.0.0.1:0")?;
     ///
     /// # Ok(())
     /// # }
     /// ```
     // <https://docs.rs/tokio/latest/src/tokio/net/tcp/listener.rs.html#103-121>
     #[inline]
-    pub async fn bind<A: ToSocketAddrs>(addr: A) -> io::Result<TcpListener> {
+    pub fn bind<A: ToSocketAddrs>(addr: A) -> io::Result<TcpListener> {
         let addrs = addr.to_socket_addrs()?;
         let mut last_err = None;
 
         for addr in addrs {
-            match TcpListener::bind_addr(addr).await {
+            match TcpListener::bind_addr(addr) {
                 Ok(listener) => return Ok(listener),
                 Err(e) => last_err = Some(e),
             }
@@ -125,7 +126,7 @@ impl TcpListener {
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use rio::net::TcpListener;
     ///
-    /// let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    /// let listener = TcpListener::bind("127.0.0.1:8080")?;
     /// match listener.accept().await {
     ///     Ok((_socket, addr)) => println!("new client: {addr:?}"),
     ///     Err(e) => println!("couldn't get client: {e:?}"),
@@ -148,7 +149,7 @@ impl TcpListener {
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use rio::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
     ///
-    /// let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    /// let listener = TcpListener::bind("127.0.0.1:8080")?;
     /// assert_eq!(listener.local_addr().unwrap(),
     ///            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080)));
     ///
@@ -178,29 +179,22 @@ impl TcpListener {
         self.ln.set_ttl(ttl)
     }
 
-    async fn bind_addr(addr: SocketAddr) -> io::Result<TcpListener> {
-        future::poll_fn(|cx| {
-            // NOTE: `SO_REUSEADDR` socket option is already set here.
-            let ln = std::net::TcpListener::bind(addr)?;
-            let fd = ln.as_raw_fd();
+    fn bind_addr(addr: SocketAddr) -> io::Result<TcpListener> {
+        // NOTE: `SO_REUSEADDR` socket option is already set here.
+        let ln = std::net::TcpListener::bind(addr)?;
+        ln.set_nonblocking(true)?;
 
-            ln.set_nonblocking(true)?;
-
-            Poll::Ready(Ok(TcpListener {
-                ln,
-                _handle: context::with_handle(|handle| {
-                    handle.register_io(fd, Interest::READ, cx.waker().clone())
-                }),
-            }))
+        Ok(TcpListener {
+            ln,
+            handle: OnceCell::new(),
         })
-        .await
     }
 }
 
 impl Future for Accept<'_> {
     type Output = io::Result<(TcpStream, SocketAddr)>;
 
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let coop = ready!(coop::poll_proceed());
 
         match self.0.ln.accept() {
@@ -212,7 +206,19 @@ impl Future for Accept<'_> {
                     Err(e) => Poll::Ready(Err(e)),
                 }
             }
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => Poll::Pending,
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                self.0.handle.get_or_init(|| {
+                    context::with_handle(|handle| {
+                        handle.register_io(
+                            self.0.ln.as_raw_fd(),
+                            Interest::READ,
+                            cx.waker().clone(),
+                        )
+                    })
+                });
+
+                Poll::Pending
+            }
             Err(e) => {
                 coop.made_progress();
                 Poll::Ready(Err(e))

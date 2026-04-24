@@ -115,7 +115,9 @@ impl IoHandle {
             }
 
             // Store most recent filter applied.
-            self.interest.filter = interest.filter;
+            if interest.filter != 0 {
+                self.interest.filter = interest.filter;
+            }
             self.interest.flags |= interest.flags;
         }
 
@@ -151,6 +153,7 @@ impl IoHandle {
     /// On epoll-based platforms (Linux), this reflects the current interest
     /// set. On kqueue-based platforms (macOS, FreeBSD, etc.), this reflects
     /// if a write filter is currently active.
+    #[allow(unused)]
     pub const fn is_writable(&self) -> bool {
         #[cfg(target_os = "linux")]
         return self.interest.is_writable();
@@ -175,10 +178,6 @@ cfg_bsd! {
         const READ_MASK: u8 = 0x1;
         const WRITE_MASK: u8 = 0x2;
 
-        pub const fn clear_events(&mut self) {
-            self.events_set = 0;
-        }
-
         const fn set_read_event(&mut self) {
             self.events_set |= Self::READ_MASK;
         }
@@ -191,6 +190,7 @@ cfg_bsd! {
             (self.events_set & Self::READ_MASK) != 0
         }
 
+        #[allow(unused)]
         const fn is_write_registered(&self) -> bool {
             (self.events_set & Self::WRITE_MASK) != 0
         }
