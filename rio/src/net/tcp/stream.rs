@@ -592,10 +592,16 @@ mod tests {
             target_os = "openbsd",
             target_os = "netbsd"
         ))]
-        {
-            let notify_on_accept = Notify::new();
-            commands.insert(0, OnConnect::Notify(notify_on_accept.clone()));
-        }
+        let notify_on_accept = Notify::new();
+
+        #[cfg(any(
+            target_os = "macos",
+            target_os = "freebsd",
+            target_os = "dragonfly",
+            target_os = "openbsd",
+            target_os = "netbsd"
+        ))]
+        commands.insert(0, OnConnect::Notify(notify_on_accept.clone()));
 
         let (handle, addr) = spawn_listener(commands)?;
         let stream = TcpStream::connect(addr).await?;
