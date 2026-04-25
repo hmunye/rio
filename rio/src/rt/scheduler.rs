@@ -9,15 +9,7 @@ use crate::task::coop::{self, Budget};
 use crate::task::{self, JoinHandle};
 
 cfg_time! {
-    use std::time::Duration;
-
     use crate::rt::Handle;
-}
-
-cfg_io! {
-    cfg_not_time! {
-        use std::time::Duration;
-    }
 }
 
 #[derive(Debug)]
@@ -243,7 +235,7 @@ impl Scheduler {
 cfg_time! {
     cfg_not_io! {
         impl Scheduler {
-            fn try_park(&self, timeout: Duration) {
+            fn try_park(&self, timeout: std::time::Duration) {
                 if self.is_idle() {
                     // eprintln!("[[parking thread until next timer deadline]]");
                     std::thread::park_timeout(timeout);
@@ -255,7 +247,7 @@ cfg_time! {
 
 cfg_io! {
     impl Scheduler {
-        fn compute_io_timeout(&self, timeout: Option<Duration>) -> i32 {
+        fn compute_io_timeout(&self, timeout: Option<std::time::Duration>) -> i32 {
             if self.is_idle() {
                 match timeout {
                     Some(t) => t.as_millis().min(i32::MAX as u128) as i32,

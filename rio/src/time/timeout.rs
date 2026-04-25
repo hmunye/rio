@@ -133,6 +133,26 @@ impl<F: Future> Future for Timeout<F> {
     type Output = Result<F::Output, Elapsed>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        fn poll_delay(
+            budget_before: bool,
+            delay: Pin<&mut Sleep>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Elapsed> {
+            let delay_poll = || match delay.poll(cx) {
+                Poll::Ready(()) => Poll::Ready(Elapsed(())),
+                Poll::Pending => Poll::Pending,
+            };
+
+            if budget_before && !coop::has_budget_remaining() {
+                // `delay` is cooperative, so it must be polled with an unconstrained
+                // execution budget, since the wrapped future has already exhausted the
+                // current budget. This ensures `delay` has a chance to execute.
+                coop::with_unconstrained(delay_poll)
+            } else {
+                delay_poll()
+            }
+        }
+
         let me = self.project();
         let budget_before = coop::has_budget_remaining();
 
@@ -141,25 +161,6 @@ impl<F: Future> Future for Timeout<F> {
         }
 
         poll_delay(budget_before, me.delay, cx).map(Err)
-    }
-}
-
-// <https://docs.rs/tokio/latest/src/tokio/time/timeout.rs.html#212>
-//
-// commit: 6c03e03898d71eca976ee1ad8481cf112ae722ba
-fn poll_delay(budget_before: bool, delay: Pin<&mut Sleep>, cx: &mut Context<'_>) -> Poll<Elapsed> {
-    let delay_poll = || match delay.poll(cx) {
-        Poll::Ready(()) => Poll::Ready(Elapsed(())),
-        Poll::Pending => Poll::Pending,
-    };
-
-    if budget_before && !coop::has_budget_remaining() {
-        // `delay` is cooperative, so it must be polled with an unconstrained
-        // execution budget, since the wrapped future has already exhausted the
-        // current budget. This ensures `delay` has a chance to execute.
-        coop::with_unconstrained(delay_poll)
-    } else {
-        delay_poll()
     }
 }
 

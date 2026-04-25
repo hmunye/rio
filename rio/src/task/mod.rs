@@ -2,7 +2,7 @@
 //!
 //! Tasks are the fundamental units of non-blocking execution within the `rio`
 //! runtime. Often referred to as __green threads__, they operate cooperatively,
-//! able to yield control back to the runtime to allow other ready tasks to
+//! able to yield control back to the scheduler to allow other ready tasks to
 //! progress.
 //!
 //! Tasks __must never block__ the current thread. Always utilize the provided
@@ -68,12 +68,12 @@
 //!
 //! #### External Lifecycle Control
 //!
-//! | API                                                  | Effect                                                                                                           |
-//! |------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
-//! | [`yield_now()`]                                      | __Running__ -> __Idle__; task will be polled on the _next_ tick.                                                 |
-//! | [`JoinHandle::cancel()`]                             | __Current Stage__ -> __Canceled__; task removed the next time polling is attempted.                              |
-//! | [`coop::poll_proceed()`], [`coop::consume_budget()`] | __Running__ -> __Idle__ if the current execution budget is exhausted; task polled on the _next_ tick if `true`.  |
-//! | [`rt::shutdown()`]                                   | Signals the runtime to exit after the *root* task completes; does __not__ wait for other spawned tasks.          |
+//! | API                                                  | Effect on Task(s)                                                                                                          |
+//! |------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
+//! | [`yield_now()`]                                      | __Running__ -> __Idle__; task will be polled on the _next_ tick.                                                |
+//! | [`JoinHandle::cancel()`]                             | __Current Stage__ -> __Canceled__; task removed the next time polling is attempted.                             |
+//! | [`coop::poll_proceed()`], [`coop::consume_budget()`] | __Running__ -> __Idle__ if the current execution budget is exhausted; task polled on the _next_ tick if `true`. |
+//! | [`rt::shutdown()`]                                   | Signals the runtime to exit after the *root* task completes; does __not__ wait for other spawned tasks.         |
 //!
 //!
 //! [`cooperative scheduling`]: coop

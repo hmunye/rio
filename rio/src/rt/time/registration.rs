@@ -27,7 +27,7 @@ impl TimerHandle {
         TimerHandle(RawTimerHandle(IDS.replace(IDS.get() + 1)))
     }
 
-    pub fn reset(&self, deadline: Instant) -> bool {
+    pub fn update_deadline(&self, deadline: Instant) -> bool {
         context::with_handle(|handle| handle.update_timer(self, deadline))
     }
 

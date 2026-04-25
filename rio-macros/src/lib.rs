@@ -6,12 +6,8 @@ use syn::{Attribute, ItemFn, parse_macro_input};
 
 /// Wraps the `main` function in a synchronous `rio` runtime entry point.
 ///
-/// This macro allows you to define your application entry point using an
-/// `async fn main` signature.
-///
-/// # Examples
-///
-/// Transforms this:
+/// This macro allows you to define your program entry point using an
+/// `async fn main` signature, transforming this:
 ///
 /// ```text
 /// #[rio::main]
@@ -104,12 +100,7 @@ fn is_test_attribute(attr: &Attribute) -> bool {
     })
 }
 
-/// Wraps an `async` function in a synchronous `rio` runtime entry point.
-///
-/// This macro is intended for use in unit tests, allowing `async` functions
-/// to be executed within a synchronous test environment.
-///
-/// # Examples
+/// Wraps an `async` unit test in a synchronous `rio` runtime entry point.
 ///
 /// Transforms this:
 ///

@@ -11,12 +11,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| DEFAULT_ADDR.to_string());
 
     let listener = TcpListener::bind(&addr)?;
-    eprintln!("[{addr}]: listening for connections...");
+    println!("listening on [{addr}]...");
 
     loop {
         let (mut socket, addr) = listener.accept().await?;
 
-        eprintln!("[{addr}]: client connected");
+        println!("[{addr}]: client connected");
 
         rio::spawn(async move {
             let mut buf = vec![0; BUFFER_SIZE];
@@ -24,18 +24,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             loop {
                 match socket.read(&mut buf).await {
                     Ok(0) => {
-                        eprintln!("[{addr}]: client disconnected");
+                        println!("[{addr}]: client disconnected");
                         return;
                     }
                     Ok(n) => {
-                        eprintln!("[{addr}]: read {n} bytes");
+                        println!("[{addr}]: read {n} bytes");
 
                         if let Err(e) = socket.write_all(&buf[0..n]).await {
                             eprintln!("[{addr}]: failed to write to socket: {e}");
                             return;
                         }
 
-                        eprintln!("[{addr}]: sent {n} bytes");
+                        println!("[{addr}]: sent {n} bytes");
                     }
                     Err(e) => {
                         eprintln!("[{addr}]: failed to read from socket: {e}");

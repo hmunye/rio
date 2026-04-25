@@ -1,6 +1,7 @@
 # rio
 
-Minimal Asynchronous Runtime for Rust.
+Single-threaded asynchronous runtime built to explore how Rust’s `async/await`
+works under the hood.
 
 > [!WARNING]
 > This project is experimental and not intended for production use.
@@ -8,9 +9,6 @@ Minimal Asynchronous Runtime for Rust.
 [![MIT Licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/hmunye/rio/blob/main/LICENSE)
 [![Build Status](https://github.com/hmunye/rio/workflows/CI/badge.svg)](https://github.com/hmunye/rio/actions?query=workflow%3ACI+branch%3Amain)
 [![Dependency Status](https://deps.rs/repo/github/hmunye/rio/status.svg)](https://deps.rs/repo/github/hmunye/rio)
-
-`rio` is a single-threaded asynchronous runtime built to explore how Rust’s
-`async/await` works under the hood.
 
 ## Quick Start
 

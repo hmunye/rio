@@ -104,11 +104,13 @@ impl Sleep {
         }
     }
 
+    /// Resets this `Sleep` to a new deadline, without creating a new timer
+    /// registration.
     pub(crate) fn reset(&mut self, deadline: Instant) {
         self.deadline = deadline;
 
         if let Some(timer_entry) = &self.entry {
-            timer_entry.reset(deadline);
+            timer_entry.update_deadline(deadline);
         }
     }
 }

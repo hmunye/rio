@@ -5,7 +5,6 @@ use crate::rt::{Scheduler, Task, context};
 use crate::task;
 
 cfg_time! {
-    use std::task::Waker;
     use std::time::{Duration, Instant};
 
     use crate::rt::time::{self, TimerHandle};
@@ -16,10 +15,6 @@ cfg_time! {
 }
 
 cfg_io! {
-    cfg_not_time! {
-        use std::task::Waker;
-    }
-
     use std::os::fd::RawFd;
 
     use crate::rt::io::{self, Interest, IoHandle};
@@ -120,7 +115,7 @@ cfg_time! {
             self.time.drive()
         }
 
-        pub fn register_timer(&self, deadline: Instant, waker: Waker) -> TimerHandle {
+        pub fn register_timer(&self, deadline: Instant, waker: std::task::Waker) -> TimerHandle {
             self.time.register_timer(deadline, waker)
         }
 
@@ -153,7 +148,7 @@ cfg_io! {
             self.io.drive(timeout);
         }
 
-        pub fn register_io(&self, fd: RawFd, interest: Interest, waker: Waker) -> IoHandle {
+        pub fn register_io(&self, fd: RawFd, interest: Interest, waker: std::task::Waker) -> IoHandle {
             self.io.register_io(fd, interest, waker)
         }
 
