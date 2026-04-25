@@ -459,6 +459,12 @@ impl AsyncWrite for TcpStream {
 
 #[cfg(all(test, not(miri)))]
 mod tests {
+    cfg_bsd! {
+        use std::cell::{Cell, RefCell};
+        use std::rc::Rc;
+        use std::task::Waker;
+    }
+
     use super::*;
 
     use crate::io::{AsyncReadExt, AsyncWriteExt};
@@ -472,25 +478,58 @@ mod tests {
         WriteBytes(usize),
         ReadBytes(usize),
         Shutdown,
-
-        // FIXME: Hack for test synchronization.
         Wait(Duration),
-        // FIXME: Hack for test synchronization.
-        Notify,
+        #[cfg(any(
+            target_os = "macos",
+            target_os = "freebsd",
+            target_os = "dragonfly",
+            target_os = "openbsd",
+            target_os = "netbsd"
+        ))]
+        Notify(Notify),
     }
 
-    /// FIXME: Hack for test synchronization.
-    ///
-    /// Used with `OnConnect::Notify` to let the listener task make progress
-    /// until it yields or completes. Ordering of the `OnConnect` commands in
-    /// relation with when this macro is invoked is important.
-    ///
-    /// Essentially the inverse of using `OnConnect::Delay`, where the listener
-    /// task waits for the unit test to advance the logical clock.
-    macro_rules! await_notify {
-        () => {
-            crate::time::sleep(::std::time::Duration::from_millis(1)).await;
-        };
+    cfg_bsd! {
+        #[derive(Clone)]
+        struct Notify {
+            inner: Rc<NotifyInner>,
+        }
+
+        struct NotifyInner {
+            notified: Cell<bool>,
+            waker: RefCell<Option<Waker>>,
+        }
+
+        impl Notify {
+            fn new() -> Self {
+                Self {
+                    inner: Rc::new(NotifyInner {
+                        notified: Cell::default(),
+                        waker: RefCell::default(),
+                    }),
+                }
+            }
+
+            fn notify(&self) {
+                self.inner.notified.set(true);
+                if let Some(waker) = self.inner.waker.take() {
+                    waker.wake();
+                }
+            }
+        }
+
+        impl Future for Notify {
+            type Output = ();
+
+            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+                if self.inner.notified.get() {
+                    Poll::Ready(())
+                } else {
+                    self.inner.waker.replace(Some(cx.waker().clone()));
+                    Poll::Pending
+                }
+            }
+        }
     }
 
     fn spawn_listener(
@@ -511,14 +550,21 @@ mod tests {
                     OnConnect::ReadBytes(n) => {
                         socket.read_exact(&mut buf[..n]).await?;
                     }
-                    OnConnect::Wait(d) => {
-                        crate::time::sleep(d).await;
-                    }
                     OnConnect::Shutdown => {
                         socket.shutdown().await?;
                     }
-                    OnConnect::Notify => {
-                        clock::advance_now(Duration::from_millis(1));
+                    OnConnect::Wait(d) => {
+                        crate::time::sleep(d).await;
+                    }
+                    #[cfg(any(
+                        target_os = "macos",
+                        target_os = "freebsd",
+                        target_os = "dragonfly",
+                        target_os = "openbsd",
+                        target_os = "netbsd"
+                    ))]
+                    OnConnect::Notify(n) => {
+                        n.notify();
                     }
                 }
             }
@@ -546,11 +592,21 @@ mod tests {
             target_os = "openbsd",
             target_os = "netbsd"
         ))]
-        commands.insert(0, OnConnect::Notify);
+        {
+            let notify_on_accept = Notify::new();
+            commands.insert(0, OnConnect::Notify(notify_on_accept.clone()));
+        }
 
         let (handle, addr) = spawn_listener(commands)?;
         let stream = TcpStream::connect(addr).await?;
 
+        // NOTE: `kqueue(2)` notifies readiness differently than `epoll(7)`.
+        //
+        // With `kqueue(2)`, the first `accept(2)` may block, causing the
+        // listener task to yield. `await_notify!()` ensures the listener task
+        // can accept the connection before `setup_stream` returns.
+        //
+        // With `epoll(7)`, the first `accept(2)` does not block.
         #[cfg(any(
             target_os = "macos",
             target_os = "freebsd",
@@ -558,15 +614,7 @@ mod tests {
             target_os = "openbsd",
             target_os = "netbsd"
         ))]
-        // NOTE: `kqueue(2)` notifies readiness differently than `epoll(7)`.
-        //
-        // With `kqueue(2)`, the first `accept(2)` may block, causing the
-        // listener task to yield. `await_notify!()` ensures the listener task
-        // can accept the connection before `setup_stream` returns.
-        //
-        // With `epoll(7)`, the first `accept(2)` does not block, so this step
-        // is unnecessary.
-        await_notify!();
+        notify_on_accept.await;
 
         assert!(context::with_handle(Handle::io_resources) > 0);
 
@@ -796,9 +844,26 @@ mod tests {
     fn test_shutdown_after_write() {
         rt! {
             let buf = [1u8; 10];
+
+            #[cfg(any(
+                target_os = "macos",
+                target_os = "freebsd",
+                target_os = "dragonfly",
+                target_os = "openbsd",
+                target_os = "netbsd"
+            ))]
+            let notify = Notify::new();
+
             let (handle, mut stream) = setup_stream(vec![
                 OnConnect::ReadBytes(buf.len() / 2),
-                OnConnect::Notify,
+                #[cfg(any(
+                    target_os = "macos",
+                    target_os = "freebsd",
+                    target_os = "dragonfly",
+                    target_os = "openbsd",
+                    target_os = "netbsd"
+                ))]
+                OnConnect::Notify(notify.clone()),
                 OnConnect::Wait(Duration::from_millis(100)),
                 OnConnect::ReadBytes(buf.len() / 2),
             ])
@@ -812,7 +877,15 @@ mod tests {
 
             assert!(stream.shutdown().await.is_ok());
 
-            await_notify!();
+            #[cfg(any(
+                target_os = "macos",
+                target_os = "freebsd",
+                target_os = "dragonfly",
+                target_os = "openbsd",
+                target_os = "netbsd"
+            ))]
+            notify.await;
+
             clock::advance(Duration::from_millis(100)).await;
 
             drop(stream);
