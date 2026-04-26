@@ -1,9 +1,11 @@
+use rio::task;
+
 async fn counter() {
-    let id = rio::task::id();
+    let id = task::id();
 
     for i in 0..10 {
         println!("task #{id}: {i}");
-        rio::task::yield_now().await;
+        task::yield_now().await;
     }
 }
 

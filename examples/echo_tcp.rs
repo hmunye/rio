@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use rio::io::{AsyncReadExt, AsyncWriteExt};
 use rio::net::TcpListener;
 
@@ -5,7 +7,7 @@ const DEFAULT_ADDR: &str = "127.0.0.1:3000";
 const BUFFER_SIZE: usize = 4096;
 
 #[rio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn Error>> {
     let addr = std::env::args()
         .nth(1)
         .unwrap_or_else(|| DEFAULT_ADDR.to_string());

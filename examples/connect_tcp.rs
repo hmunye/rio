@@ -1,10 +1,12 @@
+use std::error::Error;
+
 use rio::io::AsyncWriteExt;
 use rio::net::TcpStream;
 
 const DEFAULT_ADDR: &str = "127.0.0.1:3000";
 
 #[rio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn Error>> {
     let addr = std::env::args()
         .nth(1)
         .unwrap_or_else(|| DEFAULT_ADDR.to_string());
