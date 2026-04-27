@@ -27,6 +27,8 @@ impl TimerHandle {
         TimerHandle(RawTimerHandle(IDS.replace(IDS.get() + 1)))
     }
 
+    /// Updates the deadline of the associated timer entry in-place without
+    /// re-registering, returning `true` if successful.
     pub fn update_deadline(&self, deadline: Instant) -> bool {
         context::with_handle(|handle| handle.update_timer(self, deadline))
     }

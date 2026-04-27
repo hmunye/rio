@@ -67,10 +67,10 @@ impl Default for Runtime {
     }
 }
 
-/// Signals the runtime to begin shutting down, without waiting for any spawned
-/// tasks to complete.
+/// Signals the runtime to begin shutting down, without waiting for any
+/// [`spawned`] tasks to complete.
 ///
-/// Only the future provided to `Runtime::block_on` will be guaranteed to
+/// Only the task created from [`Runtime::block_on`] will be guaranteed to
 /// complete before shutdown.
 ///
 /// # Panics
@@ -82,20 +82,23 @@ impl Default for Runtime {
 /// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
-/// use std::time::Duration;
+/// use rio::time::{self, Duration};
+/// use rio::{rt, task::coop};
 ///
 /// rio::spawn(async {
 ///     loop {
-///         rio::task::coop::make_cooperative(std::future::ready(())).await;
+///         coop::make_cooperative(std::future::ready(())).await;
 ///     }
 /// });
 ///
 /// rio::spawn(async {
-///     rio::time::sleep(Duration::from_millis(10)).await;
-///     rio::rt::shutdown();
+///     time::sleep(Duration::from_millis(10)).await;
+///     rt::shutdown();
 /// });
 /// # }
 /// ```
+///
+/// [`spawned`]: crate::spawn
 #[inline]
 pub fn shutdown() {
     context::with_handle(Handle::signal_shutdown);

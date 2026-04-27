@@ -14,13 +14,13 @@ use crate::task::coop;
 /// # Examples
 ///
 /// ```
+/// use rio::task::coop;
+///
 /// async fn coop_sum_squares(n: u64) -> u64 {
 ///     let mut sum = 0;
 ///
 ///     for i in 1..=n {
-///         // Ensures the future participates in cooperative scheduling, even
-///         // if there are no other potential suspension points (`.await`).
-///         rio::task::coop::consume_budget().await;
+///         coop::consume_budget().await;
 ///         sum += i * i;
 ///     }
 ///
@@ -29,8 +29,6 @@ use crate::task::coop;
 /// ```
 #[inline]
 pub async fn consume_budget() {
-    // Ensures we only yield to the scheduler until the current task can
-    // proceed, to avoid blocking the runtime.
     let mut status = Poll::Pending;
 
     future::poll_fn(|_| {

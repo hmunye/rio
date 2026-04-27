@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use crate::task::coop;
 use crate::time::{self, Sleep};
 
-/// Error returned by [`Timeout`] when it has elapsed.
+/// Error returned by an elapsed [`Timeout`].
 #[derive(Debug)]
 pub struct Elapsed(());
 
@@ -37,10 +37,10 @@ impl std::error::Error for Elapsed {}
 /// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
-/// use std::time::{Duration, Instant};
+/// use rio::time::{self, Duration};
 ///
-/// let t = rio::time::timeout(Duration::from_millis(500), async {
-///     rio::time::sleep(Duration::from_millis(800)).await;
+/// let t = time::timeout(Duration::from_millis(500), async {
+///     time::sleep(Duration::from_millis(800)).await;
 /// });
 ///
 /// assert!(t.await.is_err()); // timeout will elapse before future completes
@@ -76,10 +76,10 @@ where
 /// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
-/// use std::time::{Duration, Instant};
+/// use rio::time::{self, Duration, Instant};
 ///
-/// let t = rio::time::timeout_at(Instant::now() + Duration::from_millis(500), async {
-///     rio::time::sleep(Duration::from_millis(800)).await;
+/// let t = time::timeout_at(Instant::now() + Duration::from_millis(500), async {
+///     time::sleep(Duration::from_millis(800)).await;
 /// });
 ///
 /// assert!(t.await.is_err()); // timeout will elapse before future completes
@@ -144,9 +144,10 @@ impl<F: Future> Future for Timeout<F> {
             };
 
             if budget_before && !coop::has_budget_remaining() {
-                // `delay` is cooperative, so it must be polled with an unconstrained
-                // execution budget, since the wrapped future has already exhausted the
-                // current budget. This ensures `delay` has a chance to execute.
+                // `delay` is cooperative, so it must be polled with an
+                // unconstrained execution budget here, since the wrapped future
+                // has already exhausted the current budget. This ensures it has
+                // a chance to execute.
                 coop::with_unconstrained(delay_poll)
             } else {
                 delay_poll()

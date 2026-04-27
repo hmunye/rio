@@ -6,7 +6,7 @@ use crate::task::{self, coop::Budget};
 
 /// Guard returned by [`poll_proceed`].
 #[derive(Debug)]
-#[must_use = "not using this guard will leave any consumed budget uncommitted"]
+#[must_use = "not using this guard will discard any consumed budget"]
 pub struct BudgetGuard(Cell<Budget>);
 
 impl BudgetGuard {
@@ -32,12 +32,12 @@ impl Drop for BudgetGuard {
 }
 
 /// Decrements the current execution budget, returning a [`BudgetGuard`] if
-/// allowed to proceed. Returns [`Poll::Pending`] if the budget is exhausted,
-/// yielding control to the scheduler.
+/// allowed to proceed. If the budget was exhausted, the task yields control to
+/// the scheduler.
 ///
-/// The budget is restored to its state prior to calling `poll_proceed` when the
+/// The budget is restored to its state prior to calling this function when the
 /// guard is dropped, unless committed using [`BudgetGuard::made_progress`]. It
-/// is the caller's responsibility to do so when it _was_ able to make progress.
+/// is the caller's responsibility to do so when progress _was_ able to be made.
 ///
 /// # Panics
 ///
@@ -49,14 +49,16 @@ impl Drop for BudgetGuard {
 /// use std::pin::Pin;
 /// use std::task::{Context, Poll, ready};
 ///
+/// use rio::task::{self, coop};
+///
 /// struct CoopCounter {
-///     id: rio::task::Id,
+///     id: task::Id,
 ///     current: usize,
 ///     max: usize,
 /// }
 ///
 /// impl CoopCounter {
-///     const fn new(id: rio::task::Id, max: usize) -> Self {
+///     const fn new(id: task::Id, max: usize) -> Self {
 ///         Self {
 ///             id,
 ///             current: 0,
@@ -74,9 +76,8 @@ impl Drop for BudgetGuard {
 ///
 ///     fn poll(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
 ///         while !self.is_complete() {
-///             // Ensure there is budget remaining to continue. This will yield
-///             // to the scheduler if no budget remains.
-///             let coop = ready!(rio::task::coop::poll_proceed());
+///             // Ensure there is budget remaining to continue.
+///             let coop = ready!(coop::poll_proceed());
 ///
 ///             println!("task #{}: {}", self.id, self.current);
 ///             self.current += 1;
@@ -85,7 +86,7 @@ impl Drop for BudgetGuard {
 ///             coop.made_progress();
 ///         }
 ///
-///         // Counter has finished; future is complete.
+///         // Counter has completed.
 ///         Poll::Ready(())
 ///     }
 /// }

@@ -1,9 +1,8 @@
-use std::any::Any;
-use std::fmt;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll, ready};
+use std::{any::Any, fmt};
 
 use crate::rt::task::{TaskStage, TaskState};
 use crate::task::{self, coop};
@@ -16,9 +15,9 @@ pub struct JoinError {
 
 #[non_exhaustive]
 enum Repr {
-    /// Task was canceled before resolving to the expected output.
+    /// Task was canceled before completion.
     Canceled,
-    /// Task panicked before resolving to the expected output.
+    /// Task panicked before completion.
     Panic(Box<dyn Any + Send>),
 }
 
@@ -63,8 +62,11 @@ impl JoinError {
             .expect("`JoinError` reason is not a panic")
     }
 
-    /// Consumes `self`, returning the _panic_ payload if the task panicked,
-    /// otherwise returns `self`.
+    /// Consumes `self`, returning the _panic_ payload.
+    ///
+    /// # Errors
+    ///
+    /// Returns `self` if the associated task did not panic.
     ///
     /// # Examples
     ///
@@ -85,7 +87,6 @@ impl JoinError {
     /// # }
     /// ```
     #[inline]
-    #[allow(clippy::missing_errors_doc)]
     pub fn try_into_panic(self) -> Result<Box<dyn Any + Send>, JoinError> {
         match self.err {
             Repr::Panic(reason) => Ok(reason),
@@ -93,14 +94,15 @@ impl JoinError {
         }
     }
 
-    /// Returns `true` if the error was caused by the task panicking.
+    /// Returns `true` if the error was caused by the associated task panicking.
     #[inline]
     #[must_use]
     pub const fn is_panic(&self) -> bool {
         matches!(&self.err, Repr::Panic(_))
     }
 
-    /// Returns `true` if the error was caused by the task being canceled.
+    /// Returns `true` if the error was caused by the associated task being
+    /// canceled.
     #[inline]
     #[must_use]
     pub const fn is_canceled(&self) -> bool {
@@ -129,10 +131,10 @@ impl JoinError {
 impl fmt::Display for JoinError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.err {
-            Repr::Canceled => write!(f, "[task #{}]: canceled", self.id),
+            Repr::Canceled => write!(f, "[task #{}] canceled", self.id),
             Repr::Panic(_) => write!(
                 f,
-                "[task #{}]: panicked with: {}",
+                "[task #{}] panicked: {}",
                 self.id,
                 self.get_panic_message()
             ),
@@ -156,7 +158,7 @@ impl fmt::Debug for JoinError {
 
 impl std::error::Error for JoinError {}
 
-/// An owned handle used to join on a [`spawned task`] asynchronously.
+/// An owned handle used to join on a [`spawned task`].
 ///
 /// Analogous to [`std::thread::JoinHandle`], the task begins executing
 /// immediately, even before awaiting the handle.
@@ -165,7 +167,7 @@ impl std::error::Error for JoinError {}
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
 /// let handle = rio::spawn(async { 1 + 1 });
@@ -209,17 +211,17 @@ impl<T> JoinHandle<T> {
     /// ```
     /// # #[rio::main]
     /// # async fn main() {
-    /// use std::time::Duration;
+    /// use rio::time::{self, Duration};
     ///
     /// let mut handles = Vec::new();
     ///
     /// handles.push(rio::spawn(async {
-    ///     rio::time::sleep(Duration::from_secs(100000)).await;
+    ///     time::sleep(Duration::from_secs(100000)).await;
     ///     true
     /// }));
     ///
     /// handles.push(rio::spawn(async {
-    ///     rio::time::sleep(Duration::from_secs(100000)).await;
+    ///     time::sleep(Duration::from_secs(100000)).await;
     ///     false
     /// }));
     ///
@@ -256,7 +258,7 @@ impl<T> JoinHandle<T> {
     /// ```no_run
     /// # #[rio::main()]
     /// # async fn main() {
-    /// use std::time::Duration;
+    /// use rio::time::{self, Duration};
     ///
     /// let handle1 = rio::spawn(async {
     ///     // ...
@@ -264,12 +266,11 @@ impl<T> JoinHandle<T> {
     ///
     /// let handle2 = rio::spawn(async {
     ///     // ...
-    ///     rio::time::sleep(Duration::from_secs(1000)).await;
+    ///     time::sleep(Duration::from_secs(1000)).await;
     /// });
     ///
     /// handle2.cancel();
-    ///
-    /// rio::time::sleep(Duration::from_millis(100)).await;
+    /// time::sleep(Duration::from_millis(100)).await;
     ///
     /// assert!(handle1.is_finished());
     /// assert!(handle2.is_finished());
@@ -292,7 +293,7 @@ impl<T: 'static> JoinHandle<T> {
     /// # Panics
     ///
     /// Panics if the task's output cannot be downcast to `T` or if there is no
-    /// output retained by the current task stage.
+    /// output retained by the current stage.
     pub(crate) fn take_output(&self) -> Result<T, JoinError> {
         debug_assert!(
             !self.state.is_detached(),

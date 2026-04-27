@@ -34,11 +34,13 @@ impl fmt::Display for Id {
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
+/// use rio::task;
+///
 /// async fn foo() {
-///     println!("task #{}", rio::task::id());
+///     println!("task #{}", task::id());
 /// }
 ///
 /// foo().await;

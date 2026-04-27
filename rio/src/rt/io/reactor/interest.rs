@@ -1,7 +1,7 @@
 use std::ops;
 
-cfg_linux! {
-    /// Bitmask of I/O event readiness flags to be notified on (`epoll(7)`).
+cfg_epoll! {
+    /// Bitmask of I/O event readiness flags to be notified on.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct Interest(libc::c_int);
 
@@ -56,8 +56,8 @@ cfg_linux! {
     }
 }
 
-cfg_bsd! {
-    /// Bitmask of I/O event readiness flags to be notified on (`kqueue(2)`).
+cfg_kqueue! {
+    /// Bitmask of I/O event readiness flags to be notified on.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct Interest {
         pub flags: libc::c_ushort,

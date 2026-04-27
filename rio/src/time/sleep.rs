@@ -23,9 +23,9 @@ use crate::task::coop;
 /// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
-/// use std::time::Duration;
+/// use rio::time::{self, Duration};
 ///
-/// rio::time::sleep(Duration::from_millis(100)).await;
+/// time::sleep(Duration::from_millis(100)).await;
 /// println!("100ms have elapsed");
 /// # }
 /// ```
@@ -63,9 +63,9 @@ pub fn sleep(duration: Duration) -> Sleep {
 /// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
-/// use std::time::{Duration, Instant};
+/// use rio::time::{self, Duration, Instant};
 ///
-/// rio::time::sleep_until(Instant::now() + Duration::from_millis(100)).await;
+/// time::sleep_until(Instant::now() + Duration::from_millis(100)).await;
 /// println!("100ms have elapsed");
 /// # }
 /// ```

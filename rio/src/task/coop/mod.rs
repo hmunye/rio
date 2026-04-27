@@ -2,14 +2,14 @@
 //!
 //! ### Why Cooperation Matters
 //!
-//! Unlike OS threads, which can be forcibly interrupted by the OS kernel
+//! Unlike OS threads, which can be forcibly interrupted by the kernel
 //! (preemption), `rio` relies on __cooperative scheduling__. This means the
 //! runtime cannot interrupt a task; a task must voluntarily yield control.
 //!
-//! If a task performs heavy CPU-bound computation within its [`poll`] method
-//! without returning [`Poll::Pending`], it monopolizes the underlying thread.
-//! This leads to __task starvation__, where other ready tasks are prevented
-//! from making progress.
+//! If a task performs CPU-bound computations within its [`poll`] method without
+//! returning [`Poll::Pending`], it monopolizes the runtime thread. This leads
+//! to __task starvation__, where other ready tasks are prevented from making
+//! progress.
 //!
 //! ### Cooperative Scheduling
 //!
@@ -23,19 +23,21 @@
 //!     for _ in 0..1_000_000_000 {
 //!         // ...
 //!
-//!         // Even though we `.await` here, because the future is always returns
-//!         // Poll::Ready, the task is able to continue executing.
+//!         // Even though we `.await` here, because the future is always
+//!         // returns `Poll::Ready`, the task is able to continue executing.
 //!         future::ready(()).await;
 //!     }
 //! }
 //! ```
 //!
 //! To ensure fair scheduling, make use of the cooperative utilities provided by
-//! this module. These utilities ensure that the task _may_ periodically yields
+//! this module. These utilities ensure that the task _may_ periodically yield
 //! control, in a way that allows other ready tasks to make progress:
 //!
 //! ```
 //! use std::future;
+//!
+//! use rio::task::coop;
 //!
 //! async fn blocking_loop() {
 //!     for _ in 0..1_000_000_000 {
@@ -44,7 +46,7 @@
 //!         // This ensures the wrapped future participates in the runtime’s
 //!         // cooperative scheduling, counting towards the current execution
 //!         // budget.
-//!         rio::task::coop::make_cooperative(future::ready(())).await;
+//!         coop::make_cooperative(future::ready(())).await;
 //!     }
 //! }
 //! ```
@@ -57,7 +59,6 @@
 
 mod budget;
 pub use budget::has_budget_remaining;
-
 pub(crate) use budget::{Budget, with_initial, with_unconstrained};
 
 mod proceed;

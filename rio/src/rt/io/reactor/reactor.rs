@@ -3,10 +3,7 @@ use std::ptr;
 
 use crate::rt::io::{Interest, IoHandle, PollToken};
 
-// ============================================================================
-// epoll(7) - Linux
-// ============================================================================
-cfg_linux! {
+cfg_epoll! {
     /// Manages I/O resources and event monitoring with the underlying system.
     #[derive(Debug)]
     pub struct IoReactor {
@@ -47,7 +44,7 @@ cfg_linux! {
                 unsafe { libc::epoll_ctl(self.fd.as_raw_fd(), libc::EPOLL_CTL_ADD, fd, &raw mut ev) }
                     != -1,
                 "{}",
-                errno!("epoll_ctl(2) ADD failed")
+                os_error!("epoll_ctl(2) ADD failed")
             );
 
             handle
@@ -74,7 +71,7 @@ cfg_linux! {
                     )
                 } != -1,
                 "{}",
-                errno!("epoll_ctl(2) MOD failed")
+                os_error!("epoll_ctl(2) MOD failed")
             );
         }
 
@@ -94,7 +91,7 @@ cfg_linux! {
                     )
                 } != -1,
                 "{}",
-                errno!("epoll_ctl(2) DEL failed")
+                os_error!("epoll_ctl(2) DEL failed")
             );
         }
 
@@ -119,7 +116,7 @@ cfg_linux! {
                 )
             };
 
-            assert!(ready != -1, "{}", errno!("epoll_wait(2) failed"));
+            assert!(ready != -1, "{}", os_error!("epoll_wait(2) failed"));
 
             self.events
                 .iter()
@@ -141,7 +138,7 @@ cfg_linux! {
             // simultaneously, processing only the ready file descriptors.
             let epoll_fd = unsafe { libc::epoll_create1(0) };
 
-            assert!(epoll_fd != -1, "{}", errno!("epoll_create1(2) failed"));
+            assert!(epoll_fd != -1, "{}", os_error!("epoll_create1(2) failed"));
 
             // SAFETY: `epoll_fd` is a valid file descriptor and no other owner
             // exists for it at this point.
@@ -150,10 +147,7 @@ cfg_linux! {
     }
 }
 
-// ============================================================================
-// kqueue(2) - macOS/BSD
-// ============================================================================
-cfg_bsd! {
+cfg_kqueue! {
     use std::mem;
 
     /// Manages I/O resources and event monitoring with the underlying system.

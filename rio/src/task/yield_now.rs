@@ -5,7 +5,7 @@ use crate::rt::context;
 use crate::task;
 
 /// Yields control back to the scheduler, allowing other ready tasks to make
-/// progress.
+/// progress. No other waking is required for the task to continue.
 ///
 /// # Panics
 ///
@@ -14,15 +14,17 @@ use crate::task;
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
+/// use rio::task;
+///
 /// async fn foo() {
-///     println!("task #{}", rio::task::id());
+///     println!("task #{}", task::id());
 ///
-///     // work...
+///     //...
 ///
-///     rio::task::yield_now().await;
+///     task::yield_now().await;
 /// }
 ///
 /// rio::spawn(foo());
@@ -31,8 +33,6 @@ use crate::task;
 /// ```
 #[inline]
 pub async fn yield_now() {
-    // Ensures we only yield to the scheduler once, to avoid blocking the
-    // runtime.
     let mut yielded = false;
 
     future::poll_fn(|_| {

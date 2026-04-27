@@ -9,7 +9,7 @@ thread_local! {
     static IDS: Cell<u64> = const { Cell::new(0) };
 }
 
-/// Opaque identifier for an I/O resource relative to all other I/O resources.
+/// Opaque identifier for I/O resource readiness.
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(transparent)]
 pub struct PollToken(u64);
@@ -46,6 +46,10 @@ pub struct IoHandle {
     pub token: PollToken,
     #[cfg(any(
         target_os = "macos",
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "watchos",
+        target_os = "visionos",
         target_os = "freebsd",
         target_os = "dragonfly",
         target_os = "openbsd",
@@ -64,6 +68,10 @@ impl IoHandle {
     pub fn new(fd: RawFd, interest: Interest) -> Self {
         #[cfg(any(
             target_os = "macos",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos",
+            target_os = "visionos",
             target_os = "freebsd",
             target_os = "dragonfly",
             target_os = "openbsd",
@@ -86,6 +94,10 @@ impl IoHandle {
             token: PollToken::next(),
             #[cfg(any(
                 target_os = "macos",
+                target_os = "ios",
+                target_os = "tvos",
+                target_os = "watchos",
+                target_os = "visionos",
                 target_os = "freebsd",
                 target_os = "dragonfly",
                 target_os = "openbsd",
@@ -100,6 +112,10 @@ impl IoHandle {
     pub fn add_interest(&mut self, interest: Interest) {
         #[cfg(any(
             target_os = "macos",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos",
+            target_os = "visionos",
             target_os = "freebsd",
             target_os = "dragonfly",
             target_os = "openbsd",
@@ -121,7 +137,7 @@ impl IoHandle {
             self.interest.flags |= interest.flags;
         }
 
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         {
             self.interest |= interest;
         }
@@ -135,11 +151,15 @@ impl IoHandle {
     /// set. On kqueue-based platforms (macOS, FreeBSD, etc.), this reflects
     /// if a read filter is currently active.
     pub const fn is_readable(&self) -> bool {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         return self.interest.is_readable();
 
         #[cfg(any(
             target_os = "macos",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos",
+            target_os = "visionos",
             target_os = "freebsd",
             target_os = "dragonfly",
             target_os = "openbsd",
@@ -155,11 +175,15 @@ impl IoHandle {
     /// if a write filter is currently active.
     #[allow(unused)]
     pub const fn is_writable(&self) -> bool {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         return self.interest.is_writable();
 
         #[cfg(any(
             target_os = "macos",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos",
+            target_os = "visionos",
             target_os = "freebsd",
             target_os = "dragonfly",
             target_os = "openbsd",
@@ -173,7 +197,7 @@ impl IoHandle {
     }
 }
 
-cfg_bsd! {
+cfg_kqueue! {
     impl IoHandle {
         const READ_MASK: u8 = 0x1;
         const WRITE_MASK: u8 = 0x2;

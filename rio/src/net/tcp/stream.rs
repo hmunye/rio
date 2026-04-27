@@ -14,13 +14,12 @@ use crate::task::coop;
 
 /// TCP stream between a local and a remote socket.
 ///
-/// Created by connecting to a remote endpoint via [`connect`], or by accepting
-/// a connection from a [`TcpListener`].
+/// Created by connecting to a remote endpoint via [`TcpStream::connect`], or by
+/// accepting a connection from a [`TcpListener`].
 ///
 /// Reading and writing to a `TcpStream` is done using the methods provided by
-/// the [`AsyncReadExt`] and [`AsyncWriteExt`] traits.
+/// [`AsyncReadExt`] and [`AsyncWriteExt`].
 ///
-/// [`connect`]: TcpStream::connect
 /// [`TcpListener`]: crate::net::TcpListener
 /// [`AsyncReadExt`]: crate::io::AsyncReadExt
 /// [`AsyncWriteExt`]: crate::io::AsyncWriteExt
@@ -166,7 +165,7 @@ impl TcpStream {
         };
 
         if ret == -1 {
-            return Err(errno!("getsockopt(2) SO_LINGER failed"));
+            return Err(os_error!("getsockopt(2) SO_LINGER failed"));
         }
 
         // SAFETY: `getsockopt` call succeeded meaning `opt_value` must have
@@ -204,7 +203,7 @@ impl TcpStream {
             )
         } == -1
         {
-            return Err(errno!("setsockopt(2) SO_LINGER failed"));
+            return Err(os_error!("setsockopt(2) SO_LINGER failed"));
         }
 
         Ok(())
@@ -271,60 +270,59 @@ impl TcpStream {
     }
 }
 
-cfg_linux! {
-    impl TcpStream {
-        /// Gets the value of the `TCP_QUICKACK` option on this socket.
-        ///
-        /// # Examples
-        ///
-        /// ```no_run
-        /// # #[rio::main]
-        /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-        /// use rio::net::TcpStream;
-        ///
-        /// let stream = TcpStream::connect("127.0.0.1:8080").await?;
-        /// stream.set_quickack(true)?;
-        /// assert_eq!(stream.quickack().unwrap_or(false), true);
-        ///
-        /// # Ok(())
-        /// # }
-        /// ```
-        #[inline]
-        #[allow(clippy::missing_errors_doc)]
-        pub fn quickack(&self) -> io::Result<bool> {
-            use std::os::linux::net::TcpStreamExt;
-            self.inner.quickack()
-        }
+#[cfg(target_os = "linux")]
+impl TcpStream {
+    /// Gets the value of the `TCP_QUICKACK` option on this socket.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # #[rio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// use rio::net::TcpStream;
+    ///
+    /// let stream = TcpStream::connect("127.0.0.1:8080").await?;
+    /// stream.set_quickack(true)?;
+    /// assert_eq!(stream.quickack().unwrap_or(false), true);
+    ///
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline]
+    #[allow(clippy::missing_errors_doc)]
+    pub fn quickack(&self) -> io::Result<bool> {
+        use std::os::linux::net::TcpStreamExt;
+        self.inner.quickack()
+    }
 
-        /// Sets the value for the `TCP_QUICKACK` option on this socket
-        ///
-        /// This flag causes Linux to eagerly send `ACK`s rather than delaying
-        /// them. Linux may reset this flag after further operations on the
-        /// socket.
-        ///
-        /// See [`man 7 tcp`](https://man7.org/linux/man-pages/man7/tcp.7.html) and
-        /// [TCP delayed acknowledgement](https://en.wikipedia.org/wiki/TCP_delayed_acknowledgment)
-        /// for more information.
-        ///
-        /// # Examples
-        ///
-        /// ```no_run
-        /// # #[rio::main]
-        /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-        /// use rio::net::TcpStream;
-        ///
-        /// let stream = TcpStream::connect("127.0.0.1:8080").await?;
-        /// stream.set_quickack(true)?;
-        ///
-        /// # Ok(())
-        /// # }
-        /// ```
-        #[inline]
-        #[allow(clippy::missing_errors_doc)]
-        pub fn set_quickack(&self, quickack: bool) -> io::Result<()> {
-            use std::os::linux::net::TcpStreamExt;
-            self.inner.set_quickack(quickack)
-        }
+    /// Sets the value for the `TCP_QUICKACK` option on this socket
+    ///
+    /// This flag causes Linux to eagerly send `ACK`s rather than delaying
+    /// them. Linux may reset this flag after further operations on the
+    /// socket.
+    ///
+    /// See [`man 7 tcp`](https://man7.org/linux/man-pages/man7/tcp.7.html) and
+    /// [TCP delayed acknowledgement](https://en.wikipedia.org/wiki/TCP_delayed_acknowledgment)
+    /// for more information.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # #[rio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// use rio::net::TcpStream;
+    ///
+    /// let stream = TcpStream::connect("127.0.0.1:8080").await?;
+    /// stream.set_quickack(true)?;
+    ///
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline]
+    #[allow(clippy::missing_errors_doc)]
+    pub fn set_quickack(&self, quickack: bool) -> io::Result<()> {
+        use std::os::linux::net::TcpStreamExt;
+        self.inner.set_quickack(quickack)
     }
 }
 
@@ -459,7 +457,7 @@ impl AsyncWrite for TcpStream {
 
 #[cfg(all(test, not(miri)))]
 mod tests {
-    cfg_bsd! {
+    cfg_kqueue! {
         use std::cell::{Cell, RefCell};
         use std::rc::Rc;
         use std::task::Waker;
@@ -474,6 +472,10 @@ mod tests {
 
     const THRESHOLD_MS: u64 = 5;
 
+    fn rt_io_resources() -> usize {
+        context::with_handle(Handle::io_resources)
+    }
+
     enum OnConnect {
         WriteBytes(usize),
         ReadBytes(usize),
@@ -481,6 +483,10 @@ mod tests {
         Wait(Duration),
         #[cfg(any(
             target_os = "macos",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos",
+            target_os = "visionos",
             target_os = "freebsd",
             target_os = "dragonfly",
             target_os = "openbsd",
@@ -489,7 +495,7 @@ mod tests {
         Notify(Notify),
     }
 
-    cfg_bsd! {
+    cfg_kqueue! {
         #[derive(Clone)]
         struct Notify {
             inner: Rc<NotifyInner>,
@@ -558,6 +564,10 @@ mod tests {
                     }
                     #[cfg(any(
                         target_os = "macos",
+                        target_os = "ios",
+                        target_os = "tvos",
+                        target_os = "watchos",
+                        target_os = "visionos",
                         target_os = "freebsd",
                         target_os = "dragonfly",
                         target_os = "openbsd",
@@ -575,11 +585,6 @@ mod tests {
         Ok((handle, addr))
     }
 
-    /// Initialize a `TcpStream` connected to a listener task.
-    ///
-    /// The listener task is spawned with the provided `OnConnect` commands,
-    /// which it will process first before returning a handle to the task and
-    /// the `TcpStream`.
     #[allow(unused_mut)]
     #[allow(clippy::future_not_send)]
     async fn setup_stream(
@@ -587,6 +592,10 @@ mod tests {
     ) -> io::Result<(JoinHandle<io::Result<()>>, TcpStream)> {
         #[cfg(any(
             target_os = "macos",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos",
+            target_os = "visionos",
             target_os = "freebsd",
             target_os = "dragonfly",
             target_os = "openbsd",
@@ -596,6 +605,10 @@ mod tests {
 
         #[cfg(any(
             target_os = "macos",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos",
+            target_os = "visionos",
             target_os = "freebsd",
             target_os = "dragonfly",
             target_os = "openbsd",
@@ -609,12 +622,16 @@ mod tests {
         // NOTE: `kqueue(2)` notifies readiness differently than `epoll(7)`.
         //
         // With `kqueue(2)`, the first `accept(2)` may block, causing the
-        // listener task to yield. `await_notify!()` ensures the listener task
-        // can accept the connection before `setup_stream` returns.
+        // listener task to yield. Using `Notify`, the listener task can accept
+        // the connection before `setup_stream` returns.
         //
         // With `epoll(7)`, the first `accept(2)` does not block.
         #[cfg(any(
             target_os = "macos",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos",
+            target_os = "visionos",
             target_os = "freebsd",
             target_os = "dragonfly",
             target_os = "openbsd",
@@ -622,7 +639,7 @@ mod tests {
         ))]
         notify_on_accept.await;
 
-        assert!(context::with_handle(Handle::io_resources) > 0);
+        assert!(rt_io_resources() > 0);
 
         Ok((handle, stream))
     }
@@ -648,7 +665,7 @@ mod tests {
             drop(stream);
             assert!(handle.await.is_ok());
 
-            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert_eq!(rt_io_resources(), 0);
             assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
         }
     }
@@ -677,7 +694,7 @@ mod tests {
             drop(stream);
             assert!(handle.await.is_ok());
 
-            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert_eq!(rt_io_resources(), 0);
             assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
         }
     }
@@ -712,7 +729,7 @@ mod tests {
             drop(stream);
             assert!(handle.await.is_ok());
 
-            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert_eq!(rt_io_resources(), 0);
             assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
         }
     }
@@ -740,7 +757,7 @@ mod tests {
             drop(stream);
             assert!(handle.await.is_ok());
 
-            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert_eq!(rt_io_resources(), 0);
             assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
         }
     }
@@ -778,7 +795,7 @@ mod tests {
             drop(stream);
             assert!(handle.await.is_ok());
 
-            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert_eq!(rt_io_resources(), 0);
             assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
         }
     }
@@ -806,7 +823,7 @@ mod tests {
             drop(stream);
             assert!(handle.await.is_ok());
 
-            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert_eq!(rt_io_resources(), 0);
             assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
         }
     }
@@ -841,7 +858,7 @@ mod tests {
             drop(stream);
             assert!(handle.await.is_ok());
 
-            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert_eq!(rt_io_resources(), 0);
             assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
         }
     }
@@ -853,6 +870,10 @@ mod tests {
 
             #[cfg(any(
                 target_os = "macos",
+                target_os = "ios",
+                target_os = "tvos",
+                target_os = "watchos",
+                target_os = "visionos",
                 target_os = "freebsd",
                 target_os = "dragonfly",
                 target_os = "openbsd",
@@ -864,6 +885,10 @@ mod tests {
                 OnConnect::ReadBytes(buf.len() / 2),
                 #[cfg(any(
                     target_os = "macos",
+                    target_os = "ios",
+                    target_os = "tvos",
+                    target_os = "watchos",
+                    target_os = "visionos",
                     target_os = "freebsd",
                     target_os = "dragonfly",
                     target_os = "openbsd",
@@ -885,6 +910,10 @@ mod tests {
 
             #[cfg(any(
                 target_os = "macos",
+                target_os = "ios",
+                target_os = "tvos",
+                target_os = "watchos",
+                target_os = "visionos",
                 target_os = "freebsd",
                 target_os = "dragonfly",
                 target_os = "openbsd",
@@ -904,7 +933,7 @@ mod tests {
                 io::ErrorKind::UnexpectedEof
             );
 
-            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert_eq!(rt_io_resources(), 0);
             assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
         }
     }
@@ -930,7 +959,7 @@ mod tests {
             drop(stream);
             assert!(handle.await.is_ok());
 
-            assert_eq!(context::with_handle(Handle::io_resources), 0);
+            assert_eq!(rt_io_resources(), 0);
             assert!(clock::now().elapsed() < Duration::from_millis(THRESHOLD_MS));
         }
     }

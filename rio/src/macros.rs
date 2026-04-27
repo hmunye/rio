@@ -41,18 +41,6 @@ macro_rules! cfg_not_time {
 
 macro_rules! cfg_io {
     ($($item:item)*) => {
-        #[cfg(all(feature = "io", not(any(
-            target_os = "linux",
-            target_os = "macos",
-            target_os = "freebsd",
-            target_os = "dragonfly",
-            target_os = "openbsd",
-            target_os = "netbsd"
-        ))))]
-        compile_error!(
-            "io feature requires a target with either epoll (Linux) or kqueue (macOS/BSD) support."
-        );
-
         $(
             #[cfg(feature = "io")]
             #[cfg_attr(docsrs, doc(cfg(feature = "io")))]
@@ -107,20 +95,24 @@ macro_rules! cfg_not_test {
     }
 }
 
-macro_rules! cfg_linux {
+macro_rules! cfg_epoll {
     ($($item:item)*) => {
         $(
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             $item
         )*
     }
 }
 
-macro_rules! cfg_bsd {
+macro_rules! cfg_kqueue {
     ($($item:item)*) => {
         $(
             #[cfg(any(
                 target_os = "macos",
+                target_os = "ios",
+                target_os = "tvos",
+                target_os = "watchos",
+                target_os = "visionos",
                 target_os = "freebsd",
                 target_os = "dragonfly",
                 target_os = "openbsd",
@@ -139,13 +131,13 @@ macro_rules! rt {
                 $tt
             )*
         })
-    };
+    }
 }
 
-macro_rules! errno {
+macro_rules! os_error {
     ($($tt:tt)+) => {{
-        let errno = ::std::io::Error::last_os_error();
+        let e = ::std::io::Error::last_os_error();
         let prefix = format!($($tt)+);
-        ::std::io::Error::new(errno.kind(), format!("{prefix}: {errno}"))
-    }};
+        ::std::io::Error::new(e.kind(), format!("{prefix}: {e}"))
+    }}
 }

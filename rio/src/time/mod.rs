@@ -6,13 +6,12 @@
 //! - [`Sleep`]: `Future` that completes after a specified [`Duration`] or
 //!   [`Instant`].
 //!
-//! - [`Interval`]: Yields at a fixed [`Duration`] period, each time the period
+//! - [`Interval`]: Yields at a fixed [`Duration`] period each time that period
 //!   elapses.
 //!
 //! - [`Timeout`]: Wraps a `Future`, applying a time limit on its completion.
-//!
-//! [`Instant`]: std::time::Instant
-//! [`Duration`]: std::time::Duration
+
+pub use std::time::{Duration, Instant};
 
 mod sleep;
 pub use sleep::{Sleep, sleep, sleep_until};

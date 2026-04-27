@@ -109,64 +109,55 @@ impl Handle {
     }
 }
 
-cfg_time! {
-    impl Handle {
-        pub fn drive_timers(&self) -> Option<Duration> {
-            self.time.drive()
-        }
-
-        pub fn register_timer(&self, deadline: Instant, waker: std::task::Waker) -> TimerHandle {
-            self.time.register_timer(deadline, waker)
-        }
-
-        pub fn update_timer(&self, handle: &TimerHandle, deadline: Instant) -> bool {
-            self.time.update_timer(handle, deadline)
-        }
-
-        pub fn cancel_timer(&self, handle: &TimerHandle) {
-            self.time.cancel_timer(handle);
-        }
-
+#[cfg(feature = "io")]
+impl Handle {
+    pub fn drive_timers(&self) -> Option<Duration> {
+        self.time.drive()
     }
 
-    cfg_test! {
-        impl Handle {
-            pub fn clock(&self) -> &Clock {
-                self.time.clock()
-            }
+    pub fn register_timer(&self, deadline: Instant, waker: std::task::Waker) -> TimerHandle {
+        self.time.register_timer(deadline, waker)
+    }
 
-            pub fn timers(&self) -> usize {
-                self.time.timers()
-            }
-        }
+    pub fn update_timer(&self, handle: &TimerHandle, deadline: Instant) -> bool {
+        self.time.update_timer(handle, deadline)
+    }
+
+    pub fn cancel_timer(&self, handle: &TimerHandle) {
+        self.time.cancel_timer(handle);
+    }
+
+    #[cfg(test)]
+    pub fn clock(&self) -> &Clock {
+        self.time.clock()
+    }
+
+    #[cfg(test)]
+    pub fn timers(&self) -> usize {
+        self.time.timers()
     }
 }
 
-cfg_io! {
-    impl Handle {
-        pub fn drive_io(&self, timeout: i32) {
-            self.io.drive(timeout);
-        }
-
-        pub fn register_io(&self, fd: RawFd, interest: Interest, waker: std::task::Waker) -> IoHandle {
-            self.io.register_io(fd, interest, waker)
-        }
-
-        pub fn update_interest_io(&self, handle: &IoHandle) {
-            self.io.update_interest_io(handle);
-        }
-
-        pub fn deregister_io(&self, handle: &IoHandle) {
-            self.io.deregister_io(handle);
-        }
+#[cfg(feature = "io")]
+impl Handle {
+    pub fn drive_io(&self, timeout: i32) {
+        self.io.drive(timeout);
     }
 
-    cfg_test! {
-        #[cfg(not(miri))]
-        impl Handle {
-            pub fn io_resources(&self) -> usize {
-                self.io.io_resources()
-            }
-        }
+    pub fn register_io(&self, fd: RawFd, interest: Interest, waker: std::task::Waker) -> IoHandle {
+        self.io.register_io(fd, interest, waker)
+    }
+
+    pub fn update_interest_io(&self, handle: &IoHandle) {
+        self.io.update_interest_io(handle);
+    }
+
+    pub fn deregister_io(&self, handle: &IoHandle) {
+        self.io.deregister_io(handle);
+    }
+
+    #[cfg(all(test, not(miri)))]
+    pub fn io_resources(&self) -> usize {
+        self.io.io_resources()
     }
 }

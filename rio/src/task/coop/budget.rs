@@ -8,15 +8,13 @@ pub fn has_budget_remaining() -> bool {
     context::with_budget(|b| b.get().has_remaining())
 }
 
-/// Execution Budget.
-///
 /// Tracks the number of polling iterations that may be performed within a
-/// scheduler "tick" cycle, before control is yielded back.
+/// scheduler "tick", before the current task yields.
 #[derive(Debug, Clone, Copy)]
 pub struct Budget(Option<u8>);
 
 impl Budget {
-    /// Can be used within a `u128` bitmask.
+    /// Can be used with a `u128` bitmask.
     pub const INITIAL: u8 = 127;
 
     #[must_use]

@@ -92,16 +92,15 @@ impl Driver {
     }
 }
 
-cfg_test! {
-    impl Driver {
-        /// Returns a reference to the time source used by this driver.
-        pub const fn clock(&self) -> &Clock {
-            &self.clock
-        }
+#[cfg(test)]
+impl Driver {
+    /// Returns a reference to the time source used by this driver.
+    pub const fn clock(&self) -> &Clock {
+        &self.clock
+    }
 
-        /// Returns the number of timers registered with the driver.
-        pub fn timers(&self) -> usize {
-            self.timers.borrow().len()
-        }
+    /// Returns the number of timers registered with the driver.
+    pub fn timers(&self) -> usize {
+        self.timers.borrow().len()
     }
 }

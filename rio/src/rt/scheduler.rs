@@ -2,6 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
 use std::rc::{Rc, Weak};
 use std::task::Context;
+use std::vec::Drain;
 
 use crate::rt::task::{LocalWaker, TaskStage};
 use crate::rt::{Task, context};
@@ -14,7 +15,7 @@ cfg_time! {
 
 #[derive(Debug)]
 struct Deferred {
-    /// Each slot corresponds to the amount of execution budget used by that
+    /// Each slot corresponds to the amount of execution budget used by the
     /// task during the previous scheduler "tick" (`0..=Budget::INITIAL`).
     buckets: [Vec<task::Id>; (Budget::INITIAL + 1) as usize],
     /// Tracks non-empty buckets for efficient lookup.
@@ -28,7 +29,7 @@ impl Deferred {
         self.bitmap |= 1 << idx;
     }
 
-    fn next_bucket(&mut self) -> Option<std::vec::Drain<'_, task::Id>> {
+    fn next_bucket(&mut self) -> Option<Drain<'_, task::Id>> {
         if self.is_empty() {
             return None;
         }
@@ -232,30 +233,26 @@ impl Scheduler {
     }
 }
 
-cfg_time! {
-    cfg_not_io! {
-        impl Scheduler {
-            fn try_park(&self, timeout: std::time::Duration) {
-                if self.is_idle() {
-                    // eprintln!("[[parking thread until next timer deadline]]");
-                    std::thread::park_timeout(timeout);
-                }
-            }
+#[cfg(all(feature = "time", not(feature = "io")))]
+impl Scheduler {
+    fn try_park(&self, timeout: std::time::Duration) {
+        if self.is_idle() {
+            // eprintln!("[[parking thread until next timer deadline]]");
+            std::thread::park_timeout(timeout);
         }
     }
 }
 
-cfg_io! {
-    impl Scheduler {
-        fn compute_io_timeout(&self, timeout: Option<std::time::Duration>) -> i32 {
-            if self.is_idle() {
-                match timeout {
-                    Some(t) => t.as_millis().min(i32::MAX as u128) as i32,
-                    None => -1,
-                }
-            } else {
-                0
+#[cfg(feature = "io")]
+impl Scheduler {
+    fn compute_io_timeout(&self, timeout: Option<std::time::Duration>) -> i32 {
+        if self.is_idle() {
+            match timeout {
+                Some(t) => t.as_millis().min(i32::MAX as u128) as i32,
+                None => -1,
             }
+        } else {
+            0
         }
     }
 }

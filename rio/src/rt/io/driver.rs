@@ -68,12 +68,10 @@ impl Driver {
     }
 }
 
-cfg_test! {
-    #[cfg(not(miri))]
-    impl Driver {
-        /// Returns the number of I/O resources registered with the driver.
-        pub fn io_resources(&self) -> usize {
-            self.registered.borrow().len()
-        }
+#[cfg(all(test, not(miri)))]
+impl Driver {
+    /// Returns the number of I/O resources registered with the driver.
+    pub fn io_resources(&self) -> usize {
+        self.registered.borrow().len()
     }
 }

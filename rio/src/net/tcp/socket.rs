@@ -46,7 +46,7 @@ impl TcpSocket {
             SocketAddr::V4(v4) => {
                 let sin_len = mem::size_of::<libc::sockaddr_in>();
 
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", target_os = "android"))]
                 let ipv4 = libc::sockaddr_in {
                     sin_family: libc::AF_INET as u16,
                     sin_port: v4.port().to_be(), // network-byte order
@@ -59,6 +59,10 @@ impl TcpSocket {
 
                 #[cfg(any(
                     target_os = "macos",
+                    target_os = "ios",
+                    target_os = "tvos",
+                    target_os = "watchos",
+                    target_os = "visionos",
                     target_os = "freebsd",
                     target_os = "dragonfly",
                     target_os = "openbsd",
@@ -90,7 +94,7 @@ impl TcpSocket {
             SocketAddr::V6(v6) => {
                 let sin_len = mem::size_of::<libc::sockaddr_in6>();
 
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", target_os = "android"))]
                 let ipv6 = libc::sockaddr_in6 {
                     sin6_family: libc::AF_INET6 as u16,
                     sin6_port: v6.port().to_be(),
@@ -103,6 +107,10 @@ impl TcpSocket {
 
                 #[cfg(any(
                     target_os = "macos",
+                    target_os = "ios",
+                    target_os = "tvos",
+                    target_os = "watchos",
+                    target_os = "visionos",
                     target_os = "freebsd",
                     target_os = "dragonfly",
                     target_os = "openbsd",
@@ -137,12 +145,12 @@ impl TcpSocket {
         let sock_addr_s = unsafe { sock_addr_s.assume_init() };
         let domain = sock_addr_s.ss_family.into();
 
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         let fd = unsafe {
             let fd = libc::socket(domain, libc::SOCK_STREAM | libc::SOCK_NONBLOCK, 0);
 
             if fd == -1 {
-                return Err(errno!("socket(2) failed"));
+                return Err(os_error!("socket(2) failed"));
             }
 
             fd
@@ -150,6 +158,10 @@ impl TcpSocket {
 
         #[cfg(any(
             target_os = "macos",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos",
+            target_os = "visionos",
             target_os = "freebsd",
             target_os = "dragonfly",
             target_os = "openbsd",
@@ -159,12 +171,12 @@ impl TcpSocket {
             let fd = libc::socket(domain, libc::SOCK_STREAM, 0);
 
             if fd == -1 {
-                return Err(errno!("socket(2) failed"));
+                return Err(os_error!("socket(2) failed"));
             }
 
             if libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK) == -1 {
                 libc::close(fd);
-                return Err(errno!("fcntl(2) O_NONBLOCK failed"));
+                return Err(os_error!("fcntl(2) O_NONBLOCK failed"));
             }
 
             fd
@@ -236,7 +248,7 @@ impl Future for Connect {
                             }
                             _ => {
                                 coop.made_progress();
-                                return Poll::Ready(Err(errno!("connect(2) failed")));
+                                return Poll::Ready(Err(os_error!("connect(2) failed")));
                             }
                         }
                     } else {
@@ -260,7 +272,7 @@ impl Future for Connect {
                     };
 
                     if ret == -1 || err != 0 {
-                        return Poll::Ready(Err(errno!("getsockopt(2) SO_ERROR failed")));
+                        return Poll::Ready(Err(os_error!("getsockopt(2) SO_ERROR failed")));
                     }
 
                     // SAFETY: `sock.fd` is guaranteed to be open at this point,

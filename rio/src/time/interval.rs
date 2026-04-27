@@ -22,9 +22,9 @@ use crate::time::{self, Sleep};
 /// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
-/// use std::time::Duration;
+/// use rio::time::{self, Duration};
 ///
-/// let mut interval = rio::time::interval(Duration::from_millis(10));
+/// let mut interval = time::interval(Duration::from_millis(10));
 ///
 /// interval.tick().await; // ticks immediately
 /// interval.tick().await; // ticks after 10ms
@@ -33,35 +33,9 @@ use crate::time::{self, Sleep};
 /// // approximately 20ms have elapsed.
 /// # }
 /// ```
-///
-/// In some cases, an interval may miss ticks (e.g., if a task takes longer
-/// than `period`). In such cases, the interval will "catch up" by firing ticks
-/// as quickly as necessary until it reaches the expected schedule (`burst`).
-///
-/// ```no_run
-/// # #[rio::main]
-/// # async fn main() {
-/// use std::time::Duration;
-///
-/// let mut interval = rio::time::interval(Duration::from_millis(50));
-///
-/// interval.tick().await; // ticks immediately
-///
-/// let fut = async || { rio::time::sleep(Duration::from_millis(200)).await; };
-/// fut().await;
-/// // missed some ticks...
-///
-/// interval.tick().await; // ticks immediately
-/// interval.tick().await; // ticks immediately
-/// interval.tick().await; // ticks immediately
-/// interval.tick().await; // ticks immediately
-///
-/// interval.tick().await; // ticks after 50ms
-/// # }
-/// ```
 #[inline]
 pub fn interval(period: Duration) -> Interval {
-    assert!(period > Duration::new(0, 0), "`period` must be non-zero");
+    assert!(period > Duration::ZERO, "`period` must be non-zero");
     Interval::new(period)
 }
 
@@ -79,10 +53,10 @@ pub fn interval(period: Duration) -> Interval {
 /// ```no_run
 /// # #[rio::main]
 /// # async fn main() {
-/// use std::time::{Duration, Instant};
+/// use rio::time::{self, Duration, Instant};
 ///
 /// let start = Instant::now() + Duration::from_millis(50);
-/// let mut interval = rio::time::interval_at(start, Duration::from_millis(10));
+/// let mut interval = time::interval_at(start, Duration::from_millis(10));
 ///
 /// interval.tick().await; // ticks after 50ms
 /// interval.tick().await; // ticks after 10ms
@@ -91,36 +65,9 @@ pub fn interval(period: Duration) -> Interval {
 /// // approximately 70ms have elapsed.
 /// # }
 /// ```
-///
-/// In some cases, an interval may miss ticks (e.g., if a task takes longer
-/// than `period`). In such cases, the interval will "catch up" by firing ticks
-/// as quickly as necessary until it reaches the expected schedule (`burst`).
-///
-/// ```no_run
-/// # #[rio::main]
-/// # async fn main() {
-/// use std::time::{Duration, Instant};
-///
-/// let start = Instant::now();
-/// let mut interval = rio::time::interval_at(start, Duration::from_millis(50));
-///
-/// interval.tick().await; // ticks immediately
-///
-/// let fut = async || { rio::time::sleep(Duration::from_millis(200)).await; };
-/// fut().await;
-/// // missed some ticks...
-///
-/// interval.tick().await; // ticks immediately
-/// interval.tick().await; // ticks immediately
-/// interval.tick().await; // ticks immediately
-/// interval.tick().await; // ticks immediately
-///
-/// interval.tick().await; // ticks after 50ms
-/// # }
-/// ```
 #[inline]
 pub fn interval_at(start: Instant, period: Duration) -> Interval {
-    assert!(period > Duration::new(0, 0), "`period` must be non-zero");
+    assert!(period > Duration::ZERO, "`period` must be non-zero");
     Interval::new_at(start, period)
 }
 
@@ -133,7 +80,7 @@ pub struct Interval {
 }
 
 impl Interval {
-    /// Waits until the next interval tick, returning the [`Instant`] it was
+    /// Waits until the next interval "tick", returning the [`Instant`] it was
     /// scheduled to complete.
     ///
     /// # Panics
@@ -146,15 +93,44 @@ impl Interval {
     /// ```no_run
     /// # #[rio::main]
     /// # async fn main() {
-    /// use std::time::Duration;
+    /// use rio::time::{self, Duration};
     ///
-    /// let mut interval = rio::time::interval(Duration::from_millis(10));
+    /// let mut interval = time::interval(Duration::from_millis(10));
     ///
     /// interval.tick().await; // ticks immediately
     /// interval.tick().await; // ticks after 10ms
     /// interval.tick().await; // ticks after 10ms
     ///
     /// // approximately 20ms have elapsed.
+    /// # }
+    /// ```
+    ///
+    /// # Burst Strategy
+    ///
+    /// In some cases, an interval may miss ticks (e.g., if the task is
+    /// re-scheduled after `period`). In such cases, it will "catch up" by
+    /// resolving immediately on each subsequent tick until it reaches the
+    /// expected schedule.
+    ///
+    /// ```no_run
+    /// # #[rio::main]
+    /// # async fn main() {
+    /// use rio::time::{self, Duration};
+    ///
+    /// let mut interval = time::interval(Duration::from_millis(50));
+    ///
+    /// interval.tick().await; // ticks immediately
+    ///
+    /// let fut = async || { time::sleep(Duration::from_millis(200)).await; };
+    /// fut().await;
+    /// // missed some ticks...
+    ///
+    /// interval.tick().await; // ticks immediately
+    /// interval.tick().await; // ticks immediately
+    /// interval.tick().await; // ticks immediately
+    /// interval.tick().await; // ticks immediately
+    ///
+    /// interval.tick().await; // ticks after 50ms
     /// # }
     /// ```
     #[inline]
@@ -165,8 +141,10 @@ impl Interval {
             let last_tick = self.delay.deadline();
 
             // Each tick is scheduled one `period` after `last_tick`, even if
-            // ticks were missed. If the interval was delayed, `last_tick` will
-            // be in the past, so `next_tick` will complete immediately.
+            // ticks were missed.
+            //
+            // If the interval was delayed, `last_tick` will be in the past, so
+            // `next_tick` will complete immediately.
             let next_tick = last_tick.checked_add(self.period()).unwrap_or_else(|| {
                 // <https://docs.rs/tokio/latest/src/tokio/time/instant.rs.html#34-36>
                 //

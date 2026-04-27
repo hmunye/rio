@@ -52,11 +52,10 @@ impl<F: Future> fmt::Debug for Cooperative<F> {
     }
 }
 
-/// Enables cooperative scheduling constraints for the given future.
+/// Enables cooperative scheduling constraints for `fut`.
 ///
 /// Unlike [`Unconstrained`], the wrapped future __may__ be forced to yield
-/// control to the scheduler. This avoids __starvation__, as the task will yield
-/// periodically to allow other ready tasks to make progress.
+/// control to the scheduler, avoiding __task starvation__.
 ///
 /// # Panics
 ///
@@ -70,16 +69,16 @@ impl<F: Future> fmt::Debug for Cooperative<F> {
 /// # async fn main() {
 /// use std::future;
 ///
+/// use rio::task::coop;
+///
 /// let fut = async {
 ///     for _ in 0..1_000_000 {
-///         // This will always return `Poll::Ready`. If cooperative scheduling
-///         // was not in effect (`rio::task::coop::make_unconstrained`), the
-///         // task would not be forced to yield.
 ///         future::ready(()).await;
 ///     }
 /// };
 ///
-/// rio::task::coop::make_cooperative(fut).await;
+/// // Without this, the task would _not_ be forced to yield periodically.
+/// coop::make_cooperative(fut).await;
 /// # }
 /// ```
 ///
