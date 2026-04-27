@@ -263,7 +263,7 @@ cfg_kqueue! {
                 )
             };
 
-            assert!(ready != -1, "{}", errno!("kevent(2) wait failed"));
+            assert!(ready != -1, "{}", os_error!("kevent(2) wait failed"));
 
             self.events
                 .iter()
@@ -298,7 +298,7 @@ cfg_kqueue! {
                     )
                 } != -1,
                 "{}",
-                errno!("kevent(2) EV_ADD failed")
+                os_error!("kevent(2) EV_ADD failed")
             );
         }
 
@@ -317,7 +317,7 @@ cfg_kqueue! {
             // transition.
             let kq_fd = unsafe { libc::kqueue() };
 
-            assert!(kq_fd != -1, "{}", errno!("kqueue(2) failed"));
+            assert!(kq_fd != -1, "{}", os_error!("kqueue(2) failed"));
 
             // SAFETY: `kq_fd` is a valid file descriptor and no other owner
             // exists for it at this point.

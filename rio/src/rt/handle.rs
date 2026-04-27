@@ -109,7 +109,7 @@ impl Handle {
     }
 }
 
-#[cfg(feature = "io")]
+#[cfg(feature = "time")]
 impl Handle {
     pub fn drive_timers(&self) -> Option<Duration> {
         self.time.drive()
