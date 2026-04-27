@@ -12,8 +12,6 @@ use crate::rt::time::{RawTimerHandle, TimerEntry, TimerHandle};
 /// its children.
 #[derive(Debug, Clone)]
 pub struct TimerHeap {
-    // FIXME: Can we avoid using a `HashMap`?
-    //
     // Mapping from a `RawTimerHandle` to its position in `buf`.
     handles: HashMap<RawTimerHandle, usize>,
     // Contiguous buffer used for better cache-locality and index-based access.

@@ -77,6 +77,9 @@ compile_error!(
 or `kqueue(2)` (macOS/BSD) support"
 );
 
+// FIXME: For `io` feature, code is compiled which is only used by the `net`
+// feature. Check output in CI from `cargo hack` for other unused code.
+
 // Must be defined first!
 #[macro_use]
 pub(crate) mod macros;

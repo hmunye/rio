@@ -74,9 +74,12 @@ pub struct Scheduler {
 impl Scheduler {
     #[must_use]
     pub fn new() -> Self {
-        // NOTE: `Budget::INITIAL` must be <= 127 for `Deferred` to work
-        // correctly.
-        const { debug_assert!(Budget::INITIAL <= 127) }
+        const {
+            debug_assert!(
+                Budget::INITIAL <= 127,
+                "`Budget::INITIAL` must be <= 127 for `Deferred` to work correctly"
+            )
+        }
 
         Scheduler {
             tasks: RefCell::default(),
