@@ -1,10 +1,15 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::os::fd::RawFd;
 use std::task::Waker;
 
 use crate::rt::io::reactor::IoReactor;
-use crate::rt::io::{Interest, IoHandle, PollToken};
+use crate::rt::io::{IoHandle, PollToken};
+
+cfg_net! {
+    use std::os::fd::RawFd;
+
+    use crate::rt::io::Interest;
+}
 
 /// Driver for managing non-blocking I/O within the runtime.
 #[derive(Debug)]
@@ -24,6 +29,7 @@ impl Driver {
 
     /// Registers an I/O resource with the driver, monitoring for the events
     /// specified by `interest`, returning an `IoHandle`.
+    #[cfg(feature = "net")]
     pub fn register_io(&self, fd: RawFd, interest: Interest, waker: Waker) -> IoHandle {
         let handle = self.inner.borrow().register(fd, interest);
         self.registered.borrow_mut().insert(handle.token, waker);
@@ -31,6 +37,7 @@ impl Driver {
     }
 
     /// Updates the `interest` set for the I/O resource identified by `handle`.
+    #[cfg(feature = "net")]
     pub fn update_interest_io(&self, handle: &IoHandle) {
         self.inner.borrow().update_interest(handle);
     }
@@ -38,6 +45,7 @@ impl Driver {
     /// Deregisters an I/O resource from the driver identified by `handle`.
     pub fn deregister_io(&self, handle: &IoHandle) {
         self.inner.borrow().deregister(handle);
+        #[cfg(feature = "net")]
         self.registered.borrow_mut().remove(&handle.token);
     }
 

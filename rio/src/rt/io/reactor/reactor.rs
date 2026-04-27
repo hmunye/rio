@@ -1,7 +1,13 @@
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::ptr;
 
-use crate::rt::io::{Interest, IoHandle, PollToken};
+use crate::rt::io::{IoHandle, PollToken};
+
+cfg_net! {
+    use std::os::fd::RawFd;
+
+    use crate::rt::io::Interest;
+}
 
 cfg_epoll! {
     /// Manages I/O resources and event monitoring with the underlying system.
@@ -33,6 +39,7 @@ cfg_epoll! {
         /// # Panics
         ///
         /// Panics if `epoll_ctl(2)` fails.
+        #[cfg(feature = "net")]
         pub fn register(&self, fd: RawFd, interest: Interest) -> IoHandle {
             let handle = IoHandle::new(fd, interest);
             let mut ev = libc::epoll_event {
@@ -55,6 +62,7 @@ cfg_epoll! {
         /// # Panics
         ///
         /// Panics if `epoll_ctl(2)` fails.
+        #[cfg(feature = "net")]
         pub fn update_interest(&self, handle: &IoHandle) {
             let mut ev = libc::epoll_event {
                 events: handle.interest.into(),
@@ -190,6 +198,7 @@ cfg_kqueue! {
         /// # Panics
         ///
         /// Panics if `kevent(2)` fails.
+        #[cfg(feature = "net")]
         pub fn register(&self, fd: RawFd, interest: Interest) -> IoHandle {
             let handle = IoHandle::new(fd, interest);
             self.add_kevent(&handle);
@@ -202,6 +211,7 @@ cfg_kqueue! {
         /// # Panics
         ///
         /// Panics if `kevent(2)` fails.
+        #[cfg(feature = "net")]
         pub fn update_interest(&self, handle: &IoHandle) {
             // An (_ident_, _filter_, optional _udata_ value) tuple uniquely
             // identifies an event with the `kqueue(2)` instance.
@@ -276,6 +286,7 @@ cfg_kqueue! {
         /// # Panics
         ///
         /// Panics if `kevent(2)` fails.
+        #[cfg(feature = "net")]
         fn add_kevent(&self, handle: &IoHandle) {
             let change_list: [libc::kevent; 1] = [libc::kevent {
                 ident: handle.fd as usize,

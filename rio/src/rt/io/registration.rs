@@ -14,6 +14,7 @@ thread_local! {
 #[repr(transparent)]
 pub struct PollToken(u64);
 
+#[cfg(feature = "net")]
 impl PollToken {
     #[must_use]
     fn next() -> Self {
@@ -43,6 +44,7 @@ impl From<PollToken> for u64 {
 pub struct IoHandle {
     pub fd: RawFd,
     pub interest: Interest,
+    #[cfg(feature = "net")]
     pub token: PollToken,
     #[cfg(any(
         target_os = "macos",
@@ -65,6 +67,7 @@ pub struct IoHandle {
 
 impl IoHandle {
     #[must_use]
+    #[cfg(feature = "net")]
     pub fn new(fd: RawFd, interest: Interest) -> Self {
         #[cfg(any(
             target_os = "macos",
@@ -109,6 +112,7 @@ impl IoHandle {
 
     /// Combines the provided `Interest` with the current set, updating its I/O
     /// driver entry.
+    #[cfg(feature = "net")]
     pub fn add_interest(&mut self, interest: Interest) {
         #[cfg(any(
             target_os = "macos",
@@ -150,6 +154,7 @@ impl IoHandle {
     /// On epoll-based platforms (Linux), this reflects the current interest
     /// set. On kqueue-based platforms (macOS, FreeBSD, etc.), this reflects
     /// if a read filter is currently active.
+    #[cfg(feature = "net")]
     pub const fn is_readable(&self) -> bool {
         #[cfg(any(target_os = "linux", target_os = "android"))]
         return self.interest.is_readable();
@@ -174,6 +179,7 @@ impl IoHandle {
     /// set. On kqueue-based platforms (macOS, FreeBSD, etc.), this reflects
     /// if a write filter is currently active.
     #[allow(unused)]
+    #[cfg(feature = "net")]
     pub const fn is_writable(&self) -> bool {
         #[cfg(any(target_os = "linux", target_os = "android"))]
         return self.interest.is_writable();
