@@ -15,13 +15,14 @@ cfg_time! {
 }
 
 cfg_io! {
-    use crate::rt::io::{self, IoHandle};
+    use crate::io::IoHandle;
+    use crate::rt::io;
 }
 
 cfg_net! {
     use std::os::fd::RawFd;
 
-    use crate::rt::io::Interest;
+    use crate::io::Interest;
 }
 
 /// Runtime context guard.

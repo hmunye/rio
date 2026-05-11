@@ -78,7 +78,7 @@ impl Scheduler {
             debug_assert!(
                 Budget::INITIAL <= 127,
                 "`Budget::INITIAL` must be <= 127 for `Deferred` to work correctly"
-            )
+            );
         }
 
         Scheduler {

@@ -1,12 +1,12 @@
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::ptr;
 
-use crate::rt::io::{IoHandle, PollToken};
+use crate::io::{IoHandle, PollToken};
 
 cfg_net! {
     use std::os::fd::RawFd;
 
-    use crate::rt::io::Interest;
+    use crate::io::Interest;
 }
 
 cfg_epoll! {

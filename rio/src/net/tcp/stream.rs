@@ -6,10 +6,9 @@ use std::task::{Context, Poll, ready};
 use std::time::Duration;
 use std::{future, io};
 
-use crate::io::{AsyncRead, AsyncWrite};
+use crate::io::{AsyncRead, AsyncWrite, Interest, IoHandle};
 use crate::net::tcp::TcpSocket;
 use crate::rt::context;
-use crate::rt::io::{Interest, IoHandle};
 use crate::task::coop;
 
 /// TCP stream between a local and a remote socket.

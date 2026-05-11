@@ -5,8 +5,8 @@ use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 use std::{io, mem};
 
+use crate::io::{Interest, IoHandle};
 use crate::rt::context;
-use crate::rt::io::{Interest, IoHandle};
 use crate::task::coop;
 
 /// Non-blocking TCP socket that has not yet been converted to a [`TcpStream`].

@@ -5,9 +5,9 @@ use std::os::fd::AsRawFd;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 
+use crate::io::{Interest, IoHandle};
 use crate::net::TcpStream;
 use crate::rt::context;
-use crate::rt::io::{Interest, IoHandle};
 use crate::task::coop;
 
 /// Listener for accepting incoming TCP connections.

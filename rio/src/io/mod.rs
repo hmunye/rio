@@ -14,6 +14,13 @@ pub use async_read::{AsyncRead, AsyncReadExt};
 mod async_write;
 pub use async_write::{AsyncWrite, AsyncWriteExt};
 
+mod registration;
+pub(crate) use registration::PollToken;
+pub use registration::{IoHandle, register_io_source};
+
+mod interest;
+pub use interest::Interest;
+
 mod flush;
 mod read;
 mod read_exact;

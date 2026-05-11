@@ -1,8 +1,10 @@
 use std::cell::Cell;
+use std::future;
 use std::os::fd::RawFd;
+use std::task::Poll;
 
+use crate::io::Interest;
 use crate::rt::context;
-use crate::rt::io::Interest;
 
 thread_local! {
     /// Monotonic counter for constructing [`PollToken`]s.
@@ -34,18 +36,17 @@ impl From<PollToken> for u64 {
     }
 }
 
-/// Handle to an I/O resource returned by [`Driver::register_io`].
+/// Handle to an I/O resource returned by [`register_io_source`].
 ///
 /// Deregisters the associated I/O resource on `Drop`. The caller is responsible
-/// for closing the file descriptor of the I/O resource.
-///
-/// [`Driver::register_io`]: crate::rt::io::Driver::register_io
+/// for closing the file descriptor of the I/O resource **after** dropping the
+/// handle.
 #[derive(Debug)]
 pub struct IoHandle {
-    pub fd: RawFd,
-    pub interest: Interest,
+    pub(crate) fd: RawFd,
+    pub(crate) interest: Interest,
     #[cfg(feature = "net")]
-    pub token: PollToken,
+    pub(crate) token: PollToken,
     #[cfg(any(
         target_os = "macos",
         target_os = "ios",
@@ -68,7 +69,7 @@ pub struct IoHandle {
 impl IoHandle {
     #[must_use]
     #[cfg(feature = "net")]
-    pub fn new(fd: RawFd, interest: Interest) -> Self {
+    pub(crate) fn new(fd: RawFd, interest: Interest) -> Self {
         #[cfg(any(
             target_os = "macos",
             target_os = "ios",
@@ -112,6 +113,7 @@ impl IoHandle {
 
     /// Combines the provided `Interest` with the current set, updating its I/O
     /// driver entry.
+    #[inline]
     #[cfg(feature = "net")]
     pub fn add_interest(&mut self, interest: Interest) {
         #[cfg(any(
@@ -154,6 +156,8 @@ impl IoHandle {
     /// On epoll-based platforms (Linux), this reflects the current interest
     /// set. On kqueue-based platforms (macOS, FreeBSD, etc.), this reflects
     /// if a read filter is currently active.
+    #[inline]
+    #[must_use]
     #[cfg(feature = "net")]
     pub const fn is_readable(&self) -> bool {
         #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -178,6 +182,8 @@ impl IoHandle {
     /// On epoll-based platforms (Linux), this reflects the current interest
     /// set. On kqueue-based platforms (macOS, FreeBSD, etc.), this reflects
     /// if a write filter is currently active.
+    #[inline]
+    #[must_use]
     #[allow(unused)]
     #[cfg(feature = "net")]
     pub const fn is_writable(&self) -> bool {
@@ -231,4 +237,42 @@ impl Drop for IoHandle {
     fn drop(&mut self) {
         self.deregister();
     }
+}
+
+/// Registers a raw file descriptor with the runtime for asynchronous I/O,
+/// returning an [`IoHandle`] that tracks the registration state.
+///
+/// This is a low-level primitive for integrating external or pre-existing file
+/// descriptors into the reactor. The descriptor is monitored for the events
+/// specified by [`Interest`] (readable, writable, etc.). The FD must be open
+/// and non-blocking when registered. Updates to monitored events should be
+/// done via [`IoHandle::add_interest`], and the caller retains full ownership
+/// of the FD, which must only be closed **after** dropping the `IoHandle`.
+///
+/// # Drop Semantics
+///
+/// The returned `IoHandle` automatically deregisters the FD from the runtime
+/// when dropped. To avoid closing the FD prematurely, declare the handle before
+/// the inner resource in your type:
+///
+/// ```rust,ignore
+/// pub struct IoStream {
+///     // Ensures it is dropped first
+///     handle: Option<IoHandle>,
+///     fd: OwnedFd
+/// }
+/// ```
+///
+/// # Panics
+///
+/// Panics if the current thread is not within a runtime context.
+#[inline]
+#[must_use]
+pub async fn register_io_source(fd: RawFd, interest: Interest) -> IoHandle {
+    future::poll_fn(|cx| {
+        Poll::Ready(context::with_handle(|handle| {
+            handle.register_io(fd, interest, cx.waker().clone())
+        }))
+    })
+    .await
 }

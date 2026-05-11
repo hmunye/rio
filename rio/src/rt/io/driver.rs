@@ -2,13 +2,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::task::Waker;
 
+use crate::io::{IoHandle, PollToken};
 use crate::rt::io::reactor::IoReactor;
-use crate::rt::io::{IoHandle, PollToken};
 
 cfg_net! {
     use std::os::fd::RawFd;
 
-    use crate::rt::io::Interest;
+    use crate::io::Interest;
 }
 
 /// Driver for managing non-blocking I/O within the runtime.

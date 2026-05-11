@@ -16,20 +16,26 @@ cfg_epoll! {
         /// Requests one-shot notification for the associated file descriptor.
         pub const ONESHOT: Interest = Interest(libc::EPOLLONESHOT);
 
+        #[inline]
+        #[must_use]
         pub const fn is_readable(self) -> bool {
             (self.0 & libc::EPOLLIN) != 0
         }
 
+        #[inline]
+        #[must_use]
         pub const fn is_writable(self) -> bool {
             (self.0 & libc::EPOLLOUT) != 0
         }
 
-        #[allow(unused)]
+        #[inline]
+        #[must_use]
         pub const fn is_edge_triggered(self) -> bool {
             (self.0 & libc::EPOLLET) != 0
         }
 
-        #[allow(unused)]
+        #[inline]
+        #[must_use]
         pub const fn is_oneshot(self) -> bool {
             (self.0 & libc::EPOLLONESHOT) != 0
         }
@@ -60,8 +66,8 @@ cfg_kqueue! {
     /// Bitmask of I/O event readiness flags to be notified on.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct Interest {
-        pub flags: libc::c_ushort,
-        pub filter: libc::c_short,
+        pub(crate) flags: libc::c_ushort,
+        pub(crate) filter: libc::c_short,
     }
 
     impl Interest {
@@ -81,25 +87,32 @@ cfg_kqueue! {
         /// which report state transitions instead of the current state.
         pub const EDGE_TRIGGERED: Interest = Interest { flags: libc::EV_CLEAR, filter: 0 };
 
+        #[inline]
+        #[must_use]
         pub const fn is_readable(self) -> bool {
             self.filter == libc::EVFILT_READ
         }
 
+        #[inline]
+        #[must_use]
         pub const fn is_writable(self) -> bool {
             self.filter == libc::EVFILT_WRITE
         }
 
-        #[allow(unused)]
+        #[inline]
+        #[must_use]
         pub const fn is_enabled(self) -> bool {
             (self.flags & libc::EV_ENABLE) != 0
         }
 
-        #[allow(unused)]
+        #[inline]
+        #[must_use]
         pub const fn is_disabled(self) -> bool {
             (self.flags & libc::EV_DISABLE) != 0
         }
 
-        #[allow(unused)]
+        #[inline]
+        #[must_use]
         pub const fn is_edge_triggered(self) -> bool {
             (self.flags & libc::EV_CLEAR) != 0
         }
