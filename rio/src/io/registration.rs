@@ -1,7 +1,6 @@
 use std::cell::Cell;
-use std::future;
 use std::os::fd::RawFd;
-use std::task::Poll;
+use std::task::Waker;
 
 use crate::io::Interest;
 use crate::rt::context;
@@ -262,11 +261,6 @@ impl Drop for IoHandle {
 /// Panics if the current thread is not within a runtime context.
 #[inline]
 #[must_use]
-pub async fn register_io_source(fd: RawFd, interest: Interest) -> IoHandle {
-    future::poll_fn(|cx| {
-        Poll::Ready(context::with_handle(|handle| {
-            handle.register_io(fd, interest, cx.waker().clone())
-        }))
-    })
-    .await
+pub fn register_io_source(fd: RawFd, interest: Interest, waker: Waker) -> IoHandle {
+    context::with_handle(|handle| handle.register_io(fd, interest, waker))
 }
