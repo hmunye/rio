@@ -15,15 +15,13 @@ cfg_time! {
 }
 
 cfg_io! {
-    use crate::io::IoHandle;
+    use std::os::fd::RawFd;
+
+    use crate::io::{Interest, IoHandle};
     use crate::rt::io;
 }
 
-cfg_net! {
-    use std::os::fd::RawFd;
-
-    use crate::io::Interest;
-}
+cfg_net! {}
 
 /// Runtime context guard.
 ///
@@ -149,7 +147,6 @@ impl Handle {
         self.io.drive(timeout);
     }
 
-    #[cfg(feature = "net")]
     pub fn register_io(&self, fd: RawFd, interest: Interest, waker: std::task::Waker) -> IoHandle {
         self.io.register_io(fd, interest, waker)
     }

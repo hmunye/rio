@@ -1,15 +1,10 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::os::fd::RawFd;
 use std::task::Waker;
 
-use crate::io::{IoHandle, PollToken};
+use crate::io::{Interest, IoHandle, PollToken};
 use crate::rt::io::reactor::IoReactor;
-
-cfg_net! {
-    use std::os::fd::RawFd;
-
-    use crate::io::Interest;
-}
 
 /// Driver for managing non-blocking I/O within the runtime.
 #[derive(Debug)]
@@ -29,7 +24,6 @@ impl Driver {
 
     /// Registers an I/O resource with the driver, monitoring for the events
     /// specified by `interest`, returning an `IoHandle`.
-    #[cfg(feature = "net")]
     pub fn register_io(&self, fd: RawFd, interest: Interest, waker: Waker) -> IoHandle {
         let handle = self.inner.borrow().register(fd, interest);
         self.registered.borrow_mut().insert(handle.token, waker);

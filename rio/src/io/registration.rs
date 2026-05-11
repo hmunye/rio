@@ -16,7 +16,6 @@ thread_local! {
 #[repr(transparent)]
 pub struct PollToken(u64);
 
-#[cfg(feature = "net")]
 impl PollToken {
     #[must_use]
     fn next() -> Self {
@@ -45,7 +44,6 @@ impl From<PollToken> for u64 {
 pub struct IoHandle {
     pub(crate) fd: RawFd,
     pub(crate) interest: Interest,
-    #[cfg(feature = "net")]
     pub(crate) token: PollToken,
     #[cfg(any(
         target_os = "macos",
@@ -68,7 +66,6 @@ pub struct IoHandle {
 
 impl IoHandle {
     #[must_use]
-    #[cfg(feature = "net")]
     pub(crate) fn new(fd: RawFd, interest: Interest) -> Self {
         #[cfg(any(
             target_os = "macos",

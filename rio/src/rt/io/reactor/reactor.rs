@@ -1,13 +1,7 @@
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::ptr;
 
-use crate::io::{IoHandle, PollToken};
-
-cfg_net! {
-    use std::os::fd::RawFd;
-
-    use crate::io::Interest;
-}
+use crate::io::{Interest, IoHandle, PollToken};
 
 cfg_epoll! {
     /// Manages I/O resources and event monitoring with the underlying system.
@@ -39,7 +33,6 @@ cfg_epoll! {
         /// # Panics
         ///
         /// Panics if `epoll_ctl(2)` fails.
-        #[cfg(feature = "net")]
         pub fn register(&self, fd: RawFd, interest: Interest) -> IoHandle {
             let handle = IoHandle::new(fd, interest);
             let mut ev = libc::epoll_event {
