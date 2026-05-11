@@ -151,7 +151,6 @@ impl Handle {
         self.io.register_io(fd, interest, waker)
     }
 
-    #[cfg(feature = "net")]
     pub fn update_interest_io(&self, handle: &IoHandle) {
         self.io.update_interest_io(handle);
     }

@@ -111,7 +111,6 @@ impl IoHandle {
     /// Combines the provided `Interest` with the current set, updating its I/O
     /// driver entry.
     #[inline]
-    #[cfg(feature = "net")]
     pub fn add_interest(&mut self, interest: Interest) {
         #[cfg(any(
             target_os = "macos",
@@ -155,7 +154,6 @@ impl IoHandle {
     /// if a read filter is currently active.
     #[inline]
     #[must_use]
-    #[cfg(feature = "net")]
     pub const fn is_readable(&self) -> bool {
         #[cfg(any(target_os = "linux", target_os = "android"))]
         return self.interest.is_readable();
@@ -182,7 +180,6 @@ impl IoHandle {
     #[inline]
     #[must_use]
     #[allow(unused)]
-    #[cfg(feature = "net")]
     pub const fn is_writable(&self) -> bool {
         #[cfg(any(target_os = "linux", target_os = "android"))]
         return self.interest.is_writable();

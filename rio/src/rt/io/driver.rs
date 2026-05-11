@@ -31,7 +31,6 @@ impl Driver {
     }
 
     /// Updates the `interest` set for the I/O resource identified by `handle`.
-    #[cfg(feature = "net")]
     pub fn update_interest_io(&self, handle: &IoHandle) {
         self.inner.borrow().update_interest(handle);
     }
