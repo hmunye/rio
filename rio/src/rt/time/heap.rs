@@ -36,7 +36,7 @@ impl HeapIter<'_> {
         self.curr += 1;
         let tail = self.heap.len() - self.curr;
 
-        self.heap.buf.swap(0, tail);
+        self.heap.swap_and_update(0, tail);
         self.heap.sift_down(0, tail);
 
         Some(&mut self.heap.buf[tail])
@@ -339,6 +339,13 @@ impl TimerHeap {
         }
 
         pos
+    }
+
+    fn swap_and_update(&mut self, i: usize, j: usize) {
+        self.buf.swap(i, j);
+
+        self.handles.insert(self.buf[i].raw_handle, i);
+        self.handles.insert(self.buf[j].raw_handle, j);
     }
 }
 
